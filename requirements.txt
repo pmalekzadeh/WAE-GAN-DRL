@@ -1,0 +1,10 @@
+dm-acme[jax,tensorflow,envs]
+dm-sonnet
+dm-launchpad
+trfl
+pyyaml==5.4.1
+protobuf==3.20.*
+gym
+pandas
+matplotlib
+numpy==1.23.1
