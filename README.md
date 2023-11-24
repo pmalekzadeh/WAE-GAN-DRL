@@ -1,4 +1,4 @@
-# [Package Name]
+# RL-Hedging
 Brief introduction to your package, its purpose, and its focus on reinforcement learning algorithms and benchmarking in financial modeling.
 
 ## Table of Contents
