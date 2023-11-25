@@ -17,20 +17,20 @@ class PricerTestCase(unittest.TestCase):
 
 class TestPriceAndGreeks(unittest.TestCase):
     def test_vanilla_price_and_greeks(self):
-        ttm = np.array([252.0])
-        S = np.array([100.0])
-        iv = np.array([0.2])
-        K = np.array([100.0])
+        ttm = np.array([252.0, 31])
+        S = np.array([100.0, 9.353995306])
+        iv = np.array([0.2, 0.3])
+        K = np.array([100.0, 10.0])
         call = True
-        T = np.array([252.0])
+        T = np.array([252.0, 252.0])
 
         price, delta, gamma, vega = vanilla_price_and_greeks(ttm, S, iv, K, call, T)
 
         # These are the expected values. You might need to adjust them based on your specific implementation.
-        expected_price = np.array([7.96558])
-        expected_delta = np.array([0.53983])
-        expected_gamma = np.array([0.01985])
-        expected_vega = np.array([0.39695])
+        expected_price = np.array([7.96558, 0.16205])
+        expected_delta = np.array([0.53983, 0.28026])
+        expected_gamma = np.array([0.01985, 0.34217])
+        expected_vega = np.array([0.39695, 0.0110489])
 
         np.testing.assert_almost_equal(price, expected_price, decimal=5)
         np.testing.assert_almost_equal(delta, expected_delta, decimal=5)

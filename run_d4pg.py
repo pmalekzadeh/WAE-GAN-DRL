@@ -265,7 +265,7 @@ def main(argv):
     )
     program = agent.build()
     
-    lp.launch(program, launch_type='local_mt')
+    lp.launch(program, launch_type='local_mp')
     Path(f'{work_folder}/ok').touch()
 
 

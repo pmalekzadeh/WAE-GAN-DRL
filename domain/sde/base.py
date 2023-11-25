@@ -1,8 +1,16 @@
 '''Abstract base class of SDE environments'''
 from abc import ABC, abstractmethod
 
+import numba
+import numpy as np
+
 from dr.domain_randomized import DomainRandomized
 from patterns.observations import Observable
+
+
+@numba.njit
+def set_seed(value):
+    np.random.seed(value)
 
 class SDESimulator(Observable, DomainRandomized, ABC):
     """Abstract base class of SDE environments

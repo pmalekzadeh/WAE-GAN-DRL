@@ -8,6 +8,7 @@ import acme.utils.loggers as log_utils
 from agent.demonstrations import DemonstrationRecorder
 from domain.asset.barrier_option import BarrierDIPOption
 from domain.asset.portfolio import Portfolio
+from domain.sde.base import set_seed
 
 from config.config_loader import ConfigLoader
 
@@ -137,7 +138,7 @@ class DREnv(gym.Env):
         self.seed(seed)
 
     def seed(self, seed):
-        np.random.seed(seed)
+        set_seed(seed)
 
     def reset(self):
         """
