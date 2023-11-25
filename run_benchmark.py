@@ -16,16 +16,14 @@ from env.trade_env import DREnv
 from config.config_loader import ConfigLoader
 from agent.benchmark_agent import DeltaHedgeAgent, GammaHedgeAgent
 from analysis.gen_stats import generate_stat
+import argparse
 
-from absl import app
-from absl import flags
-
-FLAGS = flags.FLAGS
-flags.DEFINE_string('benchmark_name', 'DeltaHedging', 'Benchmark name - DeltaHedging or GammaHedging (Default DeltaHedging)')
-flags.DEFINE_integer('eval_sim', 10000, 'Number of evaluation episodes (Default 10000)')
-flags.DEFINE_string('env_config', '', 'Environment config (Default None)')
-flags.DEFINE_integer('evaluator_seed', 4321, 'Evaluation Seed (Default 4321)')
-flags.DEFINE_string('logger_prefix', 'logs/', 'Prefix folder for logger (Default None)')
+parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
+parser.add_argument('--benchmark_name', type=str, default='DeltaHedging', help='Benchmark name - DeltaHedging or GammaHedging (Default DeltaHedging)')
+parser.add_argument('--eval_sim', type=int, default=10000, help='Number of evaluation episodes (Default 10000)')
+parser.add_argument('--env_config', type=str, default='', help='Environment config (Default None)')
+parser.add_argument('--evaluator_seed', type=int, default=4321, help='Evaluation Seed (Default 4321)')
+parser.add_argument('--logger_prefix', type=str, default='logs/', help='Prefix folder for logger (Default None)')
 
 
 def make_logger(work_folder, label, terminal=False):
@@ -49,15 +47,13 @@ def make_loggers(work_folder):
     )
 
 
-def make_environment(label, seed=1234) -> dm_env.Environment:
+def make_environment(label, env_config_file, env_cmd_args, logger_prefix, seed=1234) -> dm_env.Environment:
     # Make sure the environment obeys the dm_env.Environment interface.
-    with open(FLAGS.env_config, 'r') as yaml_file:
-        config_data = yaml.safe_load(yaml_file)
-    config_loader = ConfigLoader(config_data)
+    config_loader = ConfigLoader(config_file=env_config_file, cmd_args=env_cmd_args)
     config_loader.load_objects()
     environment: DREnv = config_loader[label] if label in config_loader.objects else config_loader['env']
     environment.seed(seed)
-    environment.logger = make_logger(FLAGS.logger_prefix, label)
+    environment.logger = make_logger(logger_prefix, label)
     environment = wrappers.GymWrapper(environment)
     # Clip the action returned by the agent to the environment spec.
     environment = wrappers.SinglePrecisionWrapper(environment)
@@ -65,22 +61,23 @@ def make_environment(label, seed=1234) -> dm_env.Environment:
 
 
 def main(argv):
-    work_folder = FLAGS.logger_prefix
+    args, env_cmd_args = parser.parse_known_args(argv)
+    work_folder = args.logger_prefix
     if os.path.exists(work_folder):
         shutil.rmtree(work_folder)
     # Create an environment, grab the spec, and use it to create networks.
     loggers = make_loggers(work_folder=work_folder)
     # Construct the agent.
-    if FLAGS.benchmark_name == 'DeltaHedging':
+    if args.benchmark_name == 'DeltaHedging':
         agent = DeltaHedgeAgent() 
-    elif FLAGS.benchmark_name == 'GammaHedging':
+    elif args.benchmark_name == 'GammaHedging':
         agent = GammaHedgeAgent()
     else:
-        raise NotImplementedError(f'Benchmark {FLAGS.benchmark_name} not implemented.')
+        raise NotImplementedError(f'Benchmark {args.benchmark_name} not implemented.')
 
-    eval_env = make_environment('eval_env', seed=FLAGS.evaluator_seed)
+    eval_env = make_environment('eval_env', args.env_config, env_cmd_args, args.logger_prefix, seed=args.evaluator_seed)
     eval_loop = acme.EnvironmentLoop(eval_env, agent, label='eval_loop', logger=loggers['eval_loop'])
-    eval_loop.run(num_episodes=FLAGS.eval_sim)
+    eval_loop.run(num_episodes=args.eval_sim)
     print(generate_stat(f'{work_folder}/logs/eval_env/logs.csv',
                         [0.99, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.5]))
 
@@ -88,6 +85,7 @@ def main(argv):
 
 
 if __name__ == '__main__':
-    # import cProfile
-    # cProfile.run('app.run(main)', 'output.prof')
-    app.run(main)
+    import sys
+
+    main(sys.argv[1:])
+

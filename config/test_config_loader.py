@@ -76,5 +76,34 @@ class TestConfigLoader(unittest.TestCase):
         self.assertEqual(my_class_obj.param2, "value2")
         self.assertEqual(my_class_obj.sub_obj.param3, "value3")
 
+    def test_argparser(self):
+        # Define the YAML configuration for testing
+        config_data = {
+            "my_class": {
+                "class_name": "MyClass",
+                "params": {
+                    "param1": "value1",
+                    "param2": "value2",
+                    "sub_obj": {
+                        "ref": "shared_obj"
+                    }
+                }
+            },
+            "shared_obj": {
+                "class_name": "SubClass",
+                "params": {
+                    "param3": "value3"    
+                }
+            }
+        }
+
+
+        # Create an instance of ConfigLoader
+        loader = ConfigLoader(config_data=config_data, cmd_args="--my_class.sub_obj.param3=0.2 --my_class.param1=[1, 2, 3]")
+        loader.load_objects()
+        # Assert that the value was updated correctly
+        self.assertEqual(loader['shared_obj'].param3, 0.2)
+        self.assertEqual(loader['my_class'].param1, [1, 2, 3])
+
 if __name__ == "__main__":
     unittest.main()

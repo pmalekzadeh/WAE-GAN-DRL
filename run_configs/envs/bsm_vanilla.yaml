@@ -1,7 +1,7 @@
 # BSM Environment
-# Possion rate = 1.0 for new client trades
-# Hedging options are daily ATM call with ttm = 30 days
-# Lasting until client call option expires with episode_length = 60 days
+# Single Client Call option with ttm = 40 days
+# Hedging options are daily ATM call with ttm = 20 days
+# Lasting until client call option expires with episode_length = 40 days
 # SDE is BSM with volatility = 0.3 and s = 10.0
 
 train_env:
@@ -9,31 +9,29 @@ train_env:
   params:
     portfolio:
       ref: bsm_portfolio
-    episode_length: 30
+    episode_length: 40
     vega_state: True
     scale_action: True
     action_low: 0
     action_high: 1
-    logger_folder: test_dr/bsm_vanilla_env
 
 eval_env:
   class_name: DREnv
   params:
     portfolio:
-      ref: bsm_portfolio
-    episode_length: 30
+      ref: sabr_portfolio
+    episode_length: 20
     vega_state: True
     scale_action: True
     action_low: 0
     action_high: 1
-    logger_folder: test_dr/bsm_vanilla_env
 
 bsm_portfolio:
   class_name: Portfolio
   params:
     sde:
       ref: bsm_sde
-    client_trade_poisson_rate: 1.0
+    client_trade_poisson_rate: 0.0
     client_options:
       class_name: VanillaOption
       params:
@@ -41,24 +39,41 @@ bsm_portfolio:
           ref: bsm_sde
         call: [True]
         moneyness: [1.0]
-        ttm: [60]
+        ttm: [40]
         shares: [1.0]
-        sim_moneyness_mean: 1.0
-        sim_moneyness_std: 0.0
-        sim_ttms: [60]
-        sim_call: [True]
     hedging_options:
       class_name: VanillaOption
       params:
         sde:
           ref: bsm_sde
-        transaction_cost:
-          class_name: PercentageTransactionCost
-          params:
-            percent: 0.005
         sim_moneyness_mean: 1.0
         sim_moneyness_std: 0.0
-        sim_ttms: [30]
+        sim_ttms: [20]
+        sim_call: [True]
+
+sabr_portfolio:
+  class_name: Portfolio
+  params:
+    sde:
+      ref: sabr_sde
+    client_trade_poisson_rate: 0.0
+    client_options:
+      class_name: VanillaOption
+      params:
+        sde:
+          ref: sabr_sde
+        call: [True]
+        moneyness: [1.0]
+        ttm: [40]
+        shares: [1.0]
+    hedging_options:
+      class_name: VanillaOption
+      params:
+        sde:
+          ref: sabr_sde
+        sim_moneyness_mean: 1.0
+        sim_moneyness_std: 0.0
+        sim_ttms: [20]
         sim_call: [True]
 
 bsm_sde:
@@ -66,3 +81,10 @@ bsm_sde:
   params:
     s: 10.0
     vol: 0.3
+
+sabr_sde:
+  class_name: SABRSimulator
+  params:
+    s: 10.6
+    vol: 0.3
+    volvol: 0.6

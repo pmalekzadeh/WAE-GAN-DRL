@@ -15,7 +15,6 @@ train_env:
     scale_action: True
     action_low: 0
     action_high: 1
-    logger_folder: test_dr/dr_mixsde_vanilla_env
 
 eval_env:
   class_name: DREnv
@@ -27,7 +26,6 @@ eval_env:
     scale_action: True
     action_low: 0
     action_high: 1
-    logger_folder: test_dr/dr_mixsde_vanilla_env
 
 mix_portfolio:
   class_name: Portfolio

@@ -8,3 +8,4 @@ gym
 pandas
 matplotlib
 numpy==1.23.1
+numba

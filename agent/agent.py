@@ -356,6 +356,9 @@ class D4PG(agent.Agent):
         sigma: float = 0.3,
         clipping: bool = True,
         replay_table_name: str = reverb_adders.DEFAULT_PRIORITY_TABLE,
+        per: bool = False,
+        priority_exponent: float = 0.6,
+        importance_sampling_exponent: float = 0.2,
         demonstration_step: int = 1_000,
         demonstration_dataset: Optional[tf.data.Dataset] = None,
         counter: Optional[counting.Counter] = None,
@@ -413,7 +416,10 @@ class D4PG(agent.Agent):
                 sigma=sigma,
                 clipping=clipping,
                 demo_step=demonstration_step,
-                replay_table_name=replay_table_name,
+                per=per,
+                priority_exponent=priority_exponent,
+                importance_sampling_exponent=importance_sampling_exponent,
+                replay_table_name=replay_table_name if per else 'uniform_fifo',
             ))
 
         # TODO(mwhoffman): pass the network dataclass in directly.

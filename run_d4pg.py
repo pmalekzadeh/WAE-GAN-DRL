@@ -1,8 +1,8 @@
 import os
 import shutil
 from pathlib import Path
-import yaml
 from typing import Mapping, Sequence
+from functools import partial
 
 import tensorflow as tf
 import acme
@@ -30,29 +30,29 @@ import agent.distributional as ad
 from analysis.gen_stats import generate_stat
 from agent.demonstrations import DemonstrationRecorder
 
-from absl import app
-from absl import flags
+import argparse
 
-FLAGS = flags.FLAGS
-flags.DEFINE_string('env_config', '', 'Environment config (Default None)')
-flags.DEFINE_integer('max_actor_episodes', 50000, 'Maximum number of actor episodes for training (Default 50000)')
-flags.DEFINE_integer('num_actors', 5, 'Number of actors (Default 5)')
-flags.DEFINE_list('actor_seeds', ['2345', '3456', '4567', '5678'], 'Actor seeds (Default [2345, 3456, 4567, 5678])')
-flags.DEFINE_integer('evaluator_seed', 4321, 'Evaluation Seed (Default 4321)')
-flags.DEFINE_integer('n_step', 5, 'DRL TD Nstep (Default 5)')
-flags.DEFINE_string('critic', 'qr', 'critic distribution type - c51 or qr (Default qr, we use quantile regression to esitmate the output of the critic for all objective functions)')
-flags.DEFINE_string('obj_func', 'var', 'Objective function select from meanstd, var or cvar (Default var)')
-flags.DEFINE_float('std_coef', 1.645, 'Std coefficient when obj_func=meanstd. (Default 1.645)')
-flags.DEFINE_float('threshold', 0.99, 'Objective function threshold. (Default 0.99)')
-flags.DEFINE_string('logger_prefix', 'logs/', 'Prefix folder for logger (Default None)')
-flags.DEFINE_boolean('per', False, 'Use PER for Replay sampling (Default False)')
-flags.DEFINE_float('importance_sampling_exponent', 0.2, 'importance sampling exponent for updating importance weight for PER (Default 0.2)')
-flags.DEFINE_float('priority_exponent', 0.6, 'priority exponent for the Prioritized replay table (Default 0.6)')
-flags.DEFINE_float('lr', 1e-4, 'Learning rate for optimizer (Default 1e-4)')
-flags.DEFINE_integer('batch_size', 256, 'Batch size to train the Network (Default 256)')
-flags.DEFINE_integer('buffer_steps', 0, 'Buffer Steps in Transaction Cost Case (Default 0)')
-flags.DEFINE_string('demo_path', '', 'Demo Path (Default None)')
-flags.DEFINE_integer('demo_step', 1000, 'Demo Steps (Default 1000)')
+parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
+parser.add_argument('--env_config', type=str, default='', help='Environment config')
+parser.add_argument('--max_actor_episodes', type=int, default=50000, help='Maximum number of actor episodes for training')
+parser.add_argument('--num_actors', type=int, default=5, help='Number of actors')
+parser.add_argument('--actor_seeds', nargs='+', default=[2345, 3456, 4567, 5678], type=int, help='Actor seeds')
+parser.add_argument('--evaluator_seed', type=int, default=4321, help='Evaluation Seed')
+parser.add_argument('--n_step', type=int, default=5, help='DRL TD Nstep')
+parser.add_argument('--critic', type=str, default='qr', help='critic distribution type - c51 or qr')
+parser.add_argument('--obj_func', type=str, default='var', help='Objective function select from meanstd, var or cvar')
+parser.add_argument('--std_coef', type=float, default=1.645, help='Std coefficient when obj_func=meanstd.')
+parser.add_argument('--threshold', type=float, default=0.99, help='Objective function threshold.')
+parser.add_argument('--logger_prefix', type=str, default='logs/', help='Prefix folder for logger')
+parser.add_argument('--per', action='store_true', help='Use PER for Replay sampling')
+parser.add_argument('--importance_sampling_exponent', type=float, default=0.2, help='importance sampling exponent for updating importance weight for PER')
+parser.add_argument('--priority_exponent', type=float, default=0.6, help='priority exponent for the Prioritized replay table')
+parser.add_argument('--lr', type=float, default=1e-4, help='Learning rate for optimizer')
+parser.add_argument('--batch_size', type=int, default=256, help='Batch size to train the Network')
+parser.add_argument('--buffer_steps', type=int, default=0, help='Buffer Steps in Transaction Cost Case')
+parser.add_argument('--demo_path', type=str, default='', help='Demo Path')
+parser.add_argument('--demo_step', type=int, default=1000, help='Demo Steps')
+
 
 
 def make_logger(work_folder, label, terminal=False):
@@ -68,11 +68,8 @@ def make_logger(work_folder, label, terminal=False):
     return logger
 
 
-def make_environment(label='', seed=1234) -> dm_env.Environment:
-    # Make sure the environment obeys the dm_env.Environment interface.
-    with open(FLAGS.env_config, 'r') as yaml_file:
-        config_data = yaml.safe_load(yaml_file)
-    config_loader = ConfigLoader(config_data)
+def make_environment(env_config_file, env_cmd_args, logger_prefix, label='', seed=1234) -> dm_env.Environment:
+    config_loader = ConfigLoader(config_file=env_config_file, cmd_args=env_cmd_args)
     config_loader.load_objects()
     if 'actor' in label:
         env_type = 'train_env'
@@ -84,7 +81,7 @@ def make_environment(label='', seed=1234) -> dm_env.Environment:
     environment: DREnv = config_loader[env_type] if env_type in config_loader.objects else config_loader['env']
     environment.seed(seed)
     if label != '':
-        environment.logger = make_logger(FLAGS.logger_prefix, label, terminal=False)
+        environment.logger = make_logger(logger_prefix, label, terminal=False)
     environment = wrappers.GymWrapper(environment)
     # Clip the action returned by the agent to the environment spec.
     environment = wrappers.CanonicalSpecWrapper(environment, clip=True)
@@ -225,49 +222,56 @@ def load_policy(policy_network, checkpoint_folder):
 
 
 def main(argv):
-    work_folder = FLAGS.logger_prefix
-    if os.path.exists(work_folder):
-        shutil.rmtree(work_folder)
+    args, env_cmd_args = parser.parse_known_args(argv)
+    work_folder = args.logger_prefix
+    if os.path.exists(os.path.join(work_folder, 'logs')):
+        shutil.rmtree(os.path.join(work_folder, 'logs'))
     # Create an environment, grab the spec, and use it to create networks.
-    if FLAGS.critic == 'c51':
+    if args.critic == 'c51':
         agent_networks_factory = make_networks
-    elif FLAGS.critic == 'qr':
+    elif args.critic == 'qr':
         agent_networks_factory = make_quantile_networks
-    elif FLAGS.critic == 'iqn':
-        assert FLAGS.obj_func == 'cvar', 'IQN only support CVaR objective.'
-        agent_networks_factory = lambda a_spec: make_iqn_networks(action_spec=a_spec, cvar_th=FLAGS.threshold)
+    elif args.critic == 'iqn':
+        assert args.obj_func == 'cvar', 'IQN only support CVaR objective.'
+        agent_networks_factory = lambda a_spec: make_iqn_networks(action_spec=a_spec, cvar_th=args.threshold)
     # Construct the agent.
     agent = D4PG(
-        environment_factory=make_environment,
+        environment_factory=partial(make_environment, env_config_file=args.env_config_file, 
+                                    env_cmd_args=env_cmd_args, logger_prefix=work_folder),
         network_factory=agent_networks_factory,
-        num_actors=FLAGS.num_actors,
-        actor_seeds=[int(s) for s in FLAGS.actor_seeds],
-        evaluator_seed=FLAGS.evaluator_seed,
-        obj_func=FLAGS.obj_func,
-        threshold=FLAGS.threshold,
-        critic_loss_type=FLAGS.critic,
-        n_step=FLAGS.n_step,
+        num_actors=args.num_actors,
+        actor_seeds=[int(s) for s in args.actor_seeds],
+        evaluator_seed=args.evaluator_seed,
+        obj_func=args.obj_func,
+        threshold=args.threshold,
+        critic_loss_type=args.critic,
+        n_step=args.n_step,
+        discount=1.0,
         sigma=0.3,  # pytype: disable=wrong-arg-types
         checkpoint=True,
-        batch_size=FLAGS.batch_size,
-        per=FLAGS.per,
-        priority_exponent=FLAGS.priority_exponent,
-        importance_sampling_exponent=FLAGS.importance_sampling_exponent,
-        demonstration_step=FLAGS.demo_step,
-        demonstration_dataset=None if FLAGS.demo_path == ''
-            else DemonstrationRecorder().load(FLAGS.demo_path).make_tf_dataset(),
-        discount=1.0,
-        policy_optimizer=snt.optimizers.Adam(FLAGS.lr),
-        critic_optimizer=snt.optimizers.Adam(FLAGS.lr),
-        max_actor_episodes=FLAGS.max_actor_episodes,
+        batch_size=args.batch_size,
+        per=args.per,
+        priority_exponent=args.priority_exponent,
+        importance_sampling_exponent=args.importance_sampling_exponent,
+        demonstration_step=args.demo_step,
+        demonstration_dataset=None if args.demo_path == ''
+            else DemonstrationRecorder().load(args.demo_path).make_tf_dataset(),
+        policy_optimizer=snt.optimizers.Adam(args.lr),
+        critic_optimizer=snt.optimizers.Adam(args.lr),
+        max_actor_episodes=args.max_actor_episodes,
         log_folder=work_folder,
         checkpoint_folder=work_folder,
     )
     program = agent.build()
     
     lp.launch(program, launch_type='local_mp')
+    print(generate_stat(f'{work_folder}/logs/eval_env/logs.csv',
+                       [0.99, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.5]))
     Path(f'{work_folder}/ok').touch()
 
 
 if __name__ == '__main__':
-    app.run(main)
+    import sys
+
+    main(sys.argv[1:])
+
