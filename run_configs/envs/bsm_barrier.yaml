@@ -19,7 +19,7 @@ eval_env:
   class_name: DREnv
   params:
     portfolio:
-      ref: bsm_portfolio
+      ref: sabr_portfolio
     episode_length: 20
     vega_state: True
     scale_action: True
