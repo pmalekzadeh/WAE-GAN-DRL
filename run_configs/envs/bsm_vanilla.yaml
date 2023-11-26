@@ -39,8 +39,12 @@ bsm_portfolio:
           ref: bsm_sde
         call: [True]
         moneyness: [1.0]
-        ttm: [40]
+        ttm: [60]
         shares: [1.0]
+        sim_moneyness_mean: 1.0
+        sim_moneyness_std: 0.0
+        sim_ttms: [60]
+        sim_call: [True]
     hedging_options:
       class_name: VanillaOption
       params:
@@ -48,7 +52,7 @@ bsm_portfolio:
           ref: bsm_sde
         sim_moneyness_mean: 1.0
         sim_moneyness_std: 0.0
-        sim_ttms: [20]
+        sim_ttms: [30]
         sim_call: [True]
 
 sabr_portfolio:
@@ -64,8 +68,12 @@ sabr_portfolio:
           ref: sabr_sde
         call: [True]
         moneyness: [1.0]
-        ttm: [40]
+        ttm: [60]
         shares: [1.0]
+        sim_moneyness_mean: 1.0
+        sim_moneyness_std: 0.0
+        sim_ttms: [60]
+        sim_call: [True]
     hedging_options:
       class_name: VanillaOption
       params:
@@ -73,7 +81,7 @@ sabr_portfolio:
           ref: sabr_sde
         sim_moneyness_mean: 1.0
         sim_moneyness_std: 0.0
-        sim_ttms: [20]
+        sim_ttms: [30]
         sim_call: [True]
 
 bsm_sde:

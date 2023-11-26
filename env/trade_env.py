@@ -166,7 +166,7 @@ class DREnv(gym.Env):
 
     def get_state(self, result):
         states = np.array([self.portfolio.stock.sde.stock_price(), 
-                           self.portfolio.sde.implied_vol(np.array([self.episode_length-self.n_step]), 
+                           self.portfolio.sde.implied_vol(np.array(self.portfolio.hedging_options.sim_ttms), 
                                                           np.array([1.]))[0],
                            self.portfolio.get_delta(),
                            self.portfolio.get_gamma(),
