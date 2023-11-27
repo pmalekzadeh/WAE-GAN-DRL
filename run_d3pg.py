@@ -19,7 +19,6 @@ import numpy as np
 import sonnet as snt
 import pandas as pd
 
-
 from domain.sde import *
 from domain.asset.base import *
 from domain.asset.portfolio import Portfolio
@@ -62,7 +61,7 @@ def make_logger(work_folder, label, terminal=False):
                             label=label, add_uid=False)
     ]
     if terminal:
-        loggers.append(log_utils.TerminalLogger(label=label))
+        loggers.append(log_utils.TerminalLogger(label=label, print_fn=print))
 
     logger = log_utils.Dispatcher(loggers, log_utils.to_numpy)
     logger = log_utils.NoneFilter(logger)
@@ -83,7 +82,7 @@ def make_environment(label, env_config_file, env_cmd_args, logger_prefix, seed=1
     config_loader.load_objects()
     environment: DREnv = config_loader[label] if label in config_loader.objects else config_loader['env']
     environment.seed(seed)
-    environment.logger = make_logger(logger_prefix, label)
+    environment.logger = make_logger(logger_prefix, label) if label == 'eval_env' else None
     environment = wrappers.GymWrapper(environment)
     # Clip the action returned by the agent to the environment spec.
     environment = wrappers.CanonicalSpecWrapper(environment, clip=True)
@@ -241,6 +240,7 @@ def main(argv):
         agent_networks = make_iqn_networks(
             action_spec=environment_spec.actions, cvar_th=args.threshold)
     loggers = make_loggers(work_folder=work_folder)
+    print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
     # Construct the agent.
     agent = D4PG(
         obj_func=args.obj_func,

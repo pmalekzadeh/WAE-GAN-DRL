@@ -13,8 +13,8 @@ train_env:
     episode_length: 20
     vega_state: True
     scale_action: True
-    action_low: 0
-    action_high: 1
+    action_low: -0.2
+    action_high: 1.2
 
 eval_env:
   class_name: DREnv
@@ -24,8 +24,8 @@ eval_env:
     episode_length: 20
     vega_state: True
     scale_action: True
-    action_low: 0
-    action_high: 1
+    action_low: -0.2
+    action_high: 1.2
 
 mix_portfolio:
   class_name: Portfolio
