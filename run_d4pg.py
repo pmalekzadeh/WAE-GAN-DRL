@@ -36,7 +36,7 @@ parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
 parser.add_argument('--env_config', type=str, default='', help='Environment config')
 parser.add_argument('--max_actor_episodes', type=int, default=50000, help='Maximum number of actor episodes for training')
 parser.add_argument('--num_actors', type=int, default=5, help='Number of actors')
-parser.add_argument('--actor_seeds', nargs='+', default=[2345, 3456, 4567, 5678], type=int, help='Actor seeds')
+parser.add_argument('--actor_seeds', type=lambda s: [int(item) for item in s.split()], default=[2345, 3456, 4567, 5678, 6789], help='Actor seeds')
 parser.add_argument('--evaluator_seed', type=int, default=4321, help='Evaluation Seed')
 parser.add_argument('--n_step', type=int, default=5, help='DRL TD Nstep')
 parser.add_argument('--critic', type=str, default='qr', help='critic distribution type - c51 or qr')
@@ -61,7 +61,7 @@ def make_logger(work_folder, label, terminal=False):
                             label=label, add_uid=False)
     ]
     if terminal:
-        loggers.append(log_utils.TerminalLogger(label=label))
+        loggers.append(log_utils.TerminalLogger(label=label, print_fn=print))
 
     logger = log_utils.Dispatcher(loggers, log_utils.to_numpy)
     logger = log_utils.NoneFilter(logger)
@@ -80,8 +80,7 @@ def make_environment(env_config_file, env_cmd_args, logger_prefix, label='', see
 
     environment: DREnv = config_loader[env_type] if env_type in config_loader.objects else config_loader['env']
     environment.seed(seed)
-    if label != '':
-        environment.logger = make_logger(logger_prefix, label, terminal=False)
+    environment.logger = make_logger(logger_prefix, label, terminal=False)
     environment = wrappers.GymWrapper(environment)
     # Clip the action returned by the agent to the environment spec.
     environment = wrappers.CanonicalSpecWrapper(environment, clip=True)
@@ -236,11 +235,11 @@ def main(argv):
         agent_networks_factory = lambda a_spec: make_iqn_networks(action_spec=a_spec, cvar_th=args.threshold)
     # Construct the agent.
     agent = D4PG(
-        environment_factory=partial(make_environment, env_config_file=args.env_config_file, 
+        environment_factory=partial(make_environment, env_config_file=args.env_config, 
                                     env_cmd_args=env_cmd_args, logger_prefix=work_folder),
         network_factory=agent_networks_factory,
         num_actors=args.num_actors,
-        actor_seeds=[int(s) for s in args.actor_seeds],
+        actor_seeds=args.actor_seeds,
         evaluator_seed=args.evaluator_seed,
         obj_func=args.obj_func,
         threshold=args.threshold,
@@ -264,10 +263,10 @@ def main(argv):
     )
     program = agent.build()
     
-    lp.launch(program, launch_type='local_mp')
-    print(generate_stat(f'{work_folder}/logs/eval_env/logs.csv',
-                       [0.99, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.5]))
-    Path(f'{work_folder}/ok').touch()
+    lp.launch(program, launch_type='local_mt')
+    # print(generate_stat(f'{work_folder}/logs/eval_env/logs.csv',
+    #                    [0.99, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.5]))
+    # Path(f'{work_folder}/ok').touch()
 
 
 if __name__ == '__main__':

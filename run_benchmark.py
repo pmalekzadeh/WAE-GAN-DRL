@@ -32,7 +32,7 @@ def make_logger(work_folder, label, terminal=False):
                             label=label, add_uid=False)
     ]
     if terminal:
-        loggers.append(log_utils.TerminalLogger(label=label))
+        loggers.append(log_utils.TerminalLogger(label=label, print_fn=print))
 
     logger = log_utils.Dispatcher(loggers, log_utils.to_numpy)
     logger = log_utils.NoneFilter(logger)

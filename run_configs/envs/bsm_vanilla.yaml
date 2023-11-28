@@ -9,7 +9,7 @@ train_env:
   params:
     portfolio:
       ref: bsm_portfolio
-    episode_length: 40
+    episode_length: 30
     vega_state: True
     scale_action: True
     action_low: -0.2
@@ -20,7 +20,7 @@ eval_env:
   params:
     portfolio:
       ref: sabr_portfolio
-    episode_length: 20
+    episode_length: 30
     vega_state: True
     scale_action: True
     action_low: -0.2
@@ -93,6 +93,6 @@ bsm_sde:
 sabr_sde:
   class_name: SABRSimulator
   params:
-    s: 10.6
+    s: 10.0
     vol: 0.3
     volvol: 0.6

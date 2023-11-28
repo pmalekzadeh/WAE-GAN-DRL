@@ -40,7 +40,7 @@ def make_logger(work_folder, label, terminal=False):
                             label=label, add_uid=False)
     ]
     if terminal:
-        loggers.append(log_utils.TerminalLogger(label=label))
+        loggers.append(log_utils.TerminalLogger(label=label, print_fn=print))
 
     logger = log_utils.Dispatcher(loggers, log_utils.to_numpy)
     logger = log_utils.NoneFilter(logger)
@@ -210,7 +210,7 @@ class DistributedD4PG:
     )
 
     # Create the environment.
-    environment = self._environment_factory(f'actor{actor_id}_env', self._actor_seeds[actor_id])
+    environment = self._environment_factory(label=f'actor{actor_id}_env', seed=self._actor_seeds[actor_id])
 
     # Create logger and counter; actors will not spam bigtable.
     counter = counting.Counter(counter, 'actor')
@@ -244,7 +244,7 @@ class DistributedD4PG:
     )
 
     # Make the environment.
-    environment = self._environment_factory('evaluator_env', seed)
+    environment = self._environment_factory(label='evaluator_env', seed=seed)
 
     # Create logger and counter.
     counter = counting.Counter(counter, 'evaluator')
