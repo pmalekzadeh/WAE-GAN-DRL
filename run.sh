@@ -6,7 +6,6 @@ python run_d3pg.py @run_configs/agents/d3pg.cfg --env_config=run_configs/envs/bs
 python run_d3pg.py @run_configs/agents/d3pg.cfg --env_config=run_configs/envs/bsm_vanilla.yaml --logger_prefix=logs/bsm_vanilla/d3pg/vol0.6 --bsm_sde.vol=0.6 --bsm_portfolio.client_trade_poisson_rate=1.0 --sabr_portfolio.client_trade_poisson_rate=1.0
 python run_d3pg.py @run_configs/agents/d3pg.cfg --env_config=run_configs/envs/bsm_vanilla.yaml --logger_prefix=logs/bsm_vanilla/d3pg/vol0.7 --bsm_sde.vol=0.7 --bsm_portfolio.client_trade_poisson_rate=1.0 --sabr_portfolio.client_trade_poisson_rate=1.0
 python run_d3pg.py @run_configs/agents/d3pg.cfg --env_config=run_configs/envs/bsm_vanilla.yaml --logger_prefix=logs/bsm_vanilla/d3pg/vol0.8 --bsm_sde.vol=0.8 --bsm_portfolio.client_trade_poisson_rate=1.0 --sabr_portfolio.client_trade_poisson_rate=1.0
-python run_d3pg.py @run_configs/agents/d3pg.cfg --env_config=run_configs/envs/bsm_vanilla.yaml --logger_prefix=logs/bsm_vanilla/d3pg/vol0.9 --bsm_sde.vol=0.9 --bsm_portfolio.client_trade_poisson_rate=1.0 --sabr_portfolio.client_trade_poisson_rate=1.0
 
 python run_d3pg.py @run_configs/agents/d3pg.cfg --env_config=run_configs/envs/dr_bsm_vanilla.yaml --logger_prefix=logs/bsm_vanilla/d3pg/dr_vol --bsm_portfolio.client_trade_poisson_rate=1.0 --sabr_portfolio.client_trade_poisson_rate=1.0 --train_sim=50000
 
