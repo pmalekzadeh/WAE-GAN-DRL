@@ -77,18 +77,47 @@ class VanillaOption(Asset, ArrayTyped, LazyBase):
                                         self.sde.implied_vol(self.ttm, self.moneyness), 
                                         self.strike, self.call, self.sde.T)
 
+    def aggregate_shares(self, call, moneyness, ttm, shares):
+        # convert to structured array
+        structured_array = np.array(list(zip(call, moneyness, ttm, shares)), 
+                                    dtype=[('call', bool), ('moneyness', float), 
+                                           ('ttm', int), ('shares', float)])
+        # Find unique feature combinations and their indices
+        unique_features, unique_indices = np.unique(structured_array[['call', 'moneyness', 'ttm']], 
+                                                    return_inverse=True)
+
+        # Initialize list for aggregated shares
+        aggregated_shares = []
+
+        # Loop over unique feature combinations
+        for i in range(len(unique_features)):
+            # Sum shares for this feature combination
+            share_sum = np.sum(structured_array['shares'][unique_indices == i])
+            aggregated_shares.append(share_sum)
+
+        # Convert aggregated shares to numpy array
+        aggregated_shares = np.array(aggregated_shares)
+
+        # Only include options where the aggregated shares are not 0
+        non_zero_indices = np.nonzero(aggregated_shares)[0]
+        return dict(call=unique_features['call'][non_zero_indices], 
+                    moneyness=unique_features['moneyness'][non_zero_indices], 
+                    ttm=unique_features['ttm'][non_zero_indices], 
+                    shares=aggregated_shares[non_zero_indices])
+    
+
     def generate_options(self, num_options):
         option_calls = np.array(self.sim_call*num_options, dtype=bool)
         option_ttms = np.random.choice(self.sim_ttms, num_options)
         option_moneynss = np.random.normal(self.sim_moneyness_mean, self.sim_moneyness_std, num_options)
         option_shares = np.random.choice([1.0, -1.0], num_options)
-        return dict(call=option_calls, moneyness=option_moneynss, 
-                    ttm=option_ttms, shares=option_shares)
+        # aggregate back to back options' shares with same features, calls, ttms, moneyness
+        return self.aggregate_shares(option_calls, option_moneynss, option_ttms, option_shares)
 
     def generate_atm_option(self):
         option_calls = np.array(self.sim_call, dtype=bool)
-        option_ttms = np.random.choice(self.sim_ttms, 1)
-        option_moneynss = np.random.normal(1.0, 0.0, 1)
+        option_ttms = np.array([self.sim_ttms[0]], dtype=int)
+        option_moneynss = np.array([1.0], dtype=float)
         return VanillaOption(sde=self.sde, transaction_cost=self.transaction_cost,
                              call=option_calls, moneyness=option_moneynss, 
                              ttm=option_ttms, shares=[1.0])
@@ -117,6 +146,14 @@ class VanillaOption(Asset, ArrayTyped, LazyBase):
             cost += (self.transaction_cost(share_price=prices[idx])*abs(self.shares[idx]))
         return cost
     
+    def as_dict(self):
+        return {
+            'call': self.call,
+            'moneyness': self.moneyness,
+            'ttm': self.ttm,
+            'shares': self.shares
+        }
+
     def add(self, 
             call: Sequence[bool],
             moneyness: Sequence[float],

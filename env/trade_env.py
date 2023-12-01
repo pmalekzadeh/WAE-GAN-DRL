@@ -30,9 +30,13 @@ class StepResult:
     atm_vol_1: float = 0.   # implied volatility at time t
     liab_port_value_1: float = 0.   # liability portfolio value at time t without new arrival
     liab_port_value_2: float = 0.   # liability portfolio value at time t including new arrival
-    liab_port_delta: float = 0.     # liability delta at time t
-    liab_port_gamma: float = 0.     # liability gamma at time t
-    liab_port_vega: float = 0.      # liability vega at time t
+    liab_port_delta_1: float = 0.     # liability delta at time t without new arrival
+    liab_port_delta_2: float = 0.     # liability delta at time t including new arrival
+    liab_port_gamma_1: float = 0.     # liability gamma at time t without new arrival
+    liab_port_gamma_2: float = 0.     # liability gamma at time t including new arrival
+    liab_port_vega_1: float = 0.      # liability vega at time t without new arrival
+    liab_port_vega_2: float = 0.      # liability vega at time t including new arrival
+    num_client_arrival: float = 0.    # number of new arrival client options
     hed_port_value_1: float = 0.    # hedging portfolio value at time t
     hed_port_delta_1: float = 0.      # hedging portfolio delta at time t
     hed_port_gamma_1: float = 0.      # hedging portfolio gamma at time t
@@ -139,6 +143,7 @@ class DREnv(gym.Env):
 
     def seed(self, seed):
         set_seed(seed)
+        np.random.seed(seed)
 
     def reset(self):
         """
@@ -154,9 +159,9 @@ class DREnv(gym.Env):
             stock_price_1=self.portfolio.sde.stock_price(),
             atm_vol_1=self.portfolio.sde.implied_vol(np.array([self.episode_length-self.n_step]), 
                                                      np.array([1.]))[0],
-            liab_port_gamma=self.portfolio.client_options.get_gamma(),
-            liab_port_delta=self.portfolio.client_options.get_delta(),
-            liab_port_vega=self.portfolio.client_options.get_vega(),
+            liab_port_gamma_1=self.portfolio.client_options.get_gamma(),
+            liab_port_delta_1=self.portfolio.client_options.get_delta(),
+            liab_port_vega_1=self.portfolio.client_options.get_vega(),
             hed_port_gamma_1=self.portfolio.hedging_options.get_gamma(),
             hed_port_delta_1=self.portfolio.hedging_options.get_delta(),
             hed_port_vega_1=self.portfolio.hedging_options.get_vega(),
@@ -205,6 +210,10 @@ class DREnv(gym.Env):
         gamma_action_bound = -self.portfolio.get_gamma()/hedging_option.get_gamma()
         action_low = [0, gamma_action_bound]
         action_high = [0, gamma_action_bound]
+        if self.vega_state:
+            vega_action_bound = -self.portfolio.get_vega()/hedging_option.get_vega()
+            action_low.append(vega_action_bound)
+            action_high.append(vega_action_bound)
         low_val = np.min(action_low)
         high_val = np.max(action_high)
         buy_sell_hed_share = (low_val + action[0] * (high_val - low_val))
@@ -225,6 +234,10 @@ class DREnv(gym.Env):
         gamma_action_bound = -self.portfolio.get_gamma()/hedging_option.get_gamma()
         action_low = [0, gamma_action_bound]
         action_high = [0, gamma_action_bound]
+        if self.vega_state:
+            vega_action_bound = -self.portfolio.get_vega()/hedging_option.get_vega()
+            action_low.append(vega_action_bound)
+            action_high.append(vega_action_bound)
         low_val = np.min(action_low)
         high_val = np.max(action_high)
         buy_sell_hed_share = action[0]
@@ -242,12 +255,13 @@ class DREnv(gym.Env):
             atm_vol_1=self.portfolio.sde.implied_vol(np.array([self.episode_length-self.n_step]), 
                                                      np.array([1.]))[0],
             hed_port_value_1=self.portfolio.hedging_options.get_value(),
-            liab_port_delta=self.portfolio.client_options.get_delta(),
+            liab_port_delta_1=self.portfolio.client_options.get_delta(),
             hed_port_delta_1=self.portfolio.hedging_options.get_delta(),
-            liab_port_gamma=self.portfolio.client_options.get_gamma(),
+            liab_port_gamma_1=self.portfolio.client_options.get_gamma(),
             hed_port_gamma_1=self.portfolio.hedging_options.get_gamma(),
-            liab_port_vega=self.portfolio.client_options.get_vega(),
+            liab_port_vega_1=self.portfolio.client_options.get_vega(),
             hed_port_vega_1=self.portfolio.hedging_options.get_vega(),
+            liab_port_value_1=self.portfolio.client_options.get_value()
         )
 
         # process action to get hedging share
@@ -263,8 +277,11 @@ class DREnv(gym.Env):
             self.recorder.step(
                 self.prev_obs, result.agent_action_1, self.prev_reward)
         # Event 1. New arrival client options
-        result.liab_port_value_1 = self.portfolio.client_options.get_value()
-        self.portfolio.simulate_client_trade()
+        if self.n_step != 0:
+            result.num_client_arrival = self.portfolio.simulate_client_trade()
+        result.liab_port_delta_2 = self.portfolio.client_options.get_delta()
+        result.liab_port_gamma_2 = self.portfolio.client_options.get_gamma()
+        result.liab_port_vega_2 = self.portfolio.client_options.get_vega()
         result.liab_port_value_2 = self.portfolio.client_options.get_value()
         # Event 2 & 3. Hedging, exercise expired options 
         result.hed_cost_2 = self.portfolio.trade_hedging(result.option_shares_action_1)

@@ -58,9 +58,11 @@ class Portfolio(Asset, LazyBase):
         self.client_options.clear()
         num_options = np.random.poisson(self.poisson_rate)
         if num_options == 0:
-            return
+            return 0.0
         new_options = self.client_options.generate_options(num_options)
         self.client_options.add(**new_options)
+        return new_options["shares"].sum()
+        
 
     def trade_hedging(self, hedging_option_share: float = 0., stock_shares: Optional[float] = None) -> float:
         """
@@ -71,7 +73,7 @@ class Portfolio(Asset, LazyBase):
         # hedging option trade
         # stock trade
         if hedging_option_share != 0.:
-            hedging_option = self.hedging_options.generate_options(1)
+            hedging_option = self.hedging_options.generate_atm_option().as_dict()
             hedging_option["shares"] = np.array([hedging_option_share])
             # => Reset 2. hedging options lazy properties are reset
             self.hedging_options.clear()

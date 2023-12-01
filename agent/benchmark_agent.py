@@ -46,19 +46,42 @@ import numpy as np
 #         pass
 
 
-class GammaHedgeAgent(core.Actor):
-    def __init__(self, hedge_ratio=1.0) -> None:
+class VegaHedgeAgent(core.Actor):
+    def __init__(self, env, hedge_ratio=1.0) -> None:
+        self.env = env
+        assert env.vega_state, 'vega state is not enabled'
         self.hedge_ratio = hedge_ratio
         super().__init__()
 
     def select_action(self, observation: types.NestedArray) -> types.NestedArray:
-        current_gamma = observation[3]
-        if current_gamma > 0:
-            perfect_hedge_ratio = 0.
-        else:
-            perfect_hedge_ratio = 1.
-        hedging_ratio = self.hedge_ratio * perfect_hedge_ratio \
-            + (1 - self.hedge_ratio) * (1 - perfect_hedge_ratio)
+        hedging_option = self.env.portfolio.hedging_options.generate_atm_option()
+        hedging_vega_shares = -self.env.portfolio.get_vega()/hedging_option.get_vega() * self.hedge_ratio
+        hedging_ratio = self.env.inverse_transform_action(
+            np.array([hedging_vega_shares])
+        )
+        return np.array([hedging_ratio])
+
+    def observe_first(self, timestep: dm_env.TimeStep):
+        pass
+
+    def observe(self, action: types.NestedArray, next_timestep: dm_env.TimeStep):
+        pass
+
+    def update(self, wait: bool = False):
+        pass
+
+class GammaHedgeAgent(core.Actor):
+    def __init__(self, env, hedge_ratio=1.0) -> None:
+        self.env = env
+        self.hedge_ratio = hedge_ratio
+        super().__init__()
+
+    def select_action(self, observation: types.NestedArray) -> types.NestedArray:
+        hedging_option = self.env.portfolio.hedging_options.generate_atm_option()
+        hedging_gamma_shares = -self.env.portfolio.get_gamma()/hedging_option.get_gamma() * self.hedge_ratio
+        hedging_ratio = self.env.inverse_transform_action(
+            np.array([hedging_gamma_shares])
+        )
         return np.array([hedging_ratio])
 
     def observe_first(self, timestep: dm_env.TimeStep):
@@ -72,16 +95,16 @@ class GammaHedgeAgent(core.Actor):
 
 
 class DeltaHedgeAgent(core.Actor):
-    def __init__(self) -> None:
+    def __init__(self, env, hedge_ratio=1.0) -> None:
+        self.env = env
+        self.hedge_ratio = hedge_ratio
         super().__init__()
 
     def select_action(self, observation: types.NestedArray = None) -> types.NestedArray:
-        current_gamma = observation[3]
-        if current_gamma > 0:
-            no_action_ratio = 1.
-        else:
-            no_action_ratio = 0.
-        return np.array([no_action_ratio])
+        hedging_ratio = self.env.inverse_transform_action(
+            np.array([0.0])
+        )
+        return np.array([hedging_ratio])
 
     def observe_first(self, timestep: dm_env.TimeStep):
         pass

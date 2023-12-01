@@ -14,7 +14,7 @@ from domain.asset.base import *
 from domain.asset.portfolio import Portfolio
 from env.trade_env import DREnv
 from config.config_loader import ConfigLoader
-from agent.benchmark_agent import DeltaHedgeAgent, GammaHedgeAgent
+from agent.benchmark_agent import DeltaHedgeAgent, GammaHedgeAgent, VegaHedgeAgent
 from analysis.gen_stats import generate_stat
 import argparse
 
@@ -67,15 +67,18 @@ def main(argv):
         shutil.rmtree(work_folder)
     # Create an environment, grab the spec, and use it to create networks.
     loggers = make_loggers(work_folder=work_folder)
+    
+    eval_env = make_environment('eval_env', args.env_config, env_cmd_args, args.logger_prefix, seed=args.evaluator_seed)
     # Construct the agent.
     if args.benchmark_name == 'DeltaHedging':
-        agent = DeltaHedgeAgent() 
+        agent = DeltaHedgeAgent(eval_env) 
     elif args.benchmark_name == 'GammaHedging':
-        agent = GammaHedgeAgent()
+        agent = GammaHedgeAgent(eval_env)
+    elif args.benchmark_name == 'VegaHedging':
+        agent = VegaHedgeAgent(eval_env)
     else:
         raise NotImplementedError(f'Benchmark {args.benchmark_name} not implemented.')
 
-    eval_env = make_environment('eval_env', args.env_config, env_cmd_args, args.logger_prefix, seed=args.evaluator_seed)
     eval_loop = acme.EnvironmentLoop(eval_env, agent, label='eval_loop', logger=loggers['eval_loop'])
     eval_loop.run(num_episodes=args.eval_sim)
     print(generate_stat(f'{work_folder}/logs/eval_env/logs.csv',
