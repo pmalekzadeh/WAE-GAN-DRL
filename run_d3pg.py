@@ -36,6 +36,7 @@ parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
 parser.add_argument('--train_sim', type=int, default=50000, help='Number of training episodes')
 parser.add_argument('--eval_sim', type=int, default=10000, help='Number of evaluation episodes')
 parser.add_argument('--eval_only', action='store_true', help='Evaluation only')
+parser.add_argument('--continue_train', action='store_true', help='Continue training')
 parser.add_argument('--agent_path', type=str, default='', help='Agent Path')
 parser.add_argument('--env_config', type=str, default='', help='Environment config')
 parser.add_argument('--actor_seed', type=int, default=1234, help='Actor seed')
@@ -50,6 +51,7 @@ parser.add_argument('--per', action='store_true', help='Use PER for Replay sampl
 parser.add_argument('--importance_sampling_exponent', type=float, default=0.2, help='importance sampling exponent for updating importance weight for PER')
 parser.add_argument('--priority_exponent', type=float, default=0.6, help='priority exponent for the Prioritized replay table')
 parser.add_argument('--lr', type=float, default=1e-4, help='Learning rate for optimizer')
+parser.add_argument('--sigma', type=float, default=0.3, help='Sigma Noise for exploration')
 parser.add_argument('--batch_size', type=int, default=256, help='Batch size to train the Network')
 parser.add_argument('--buffer_steps', type=int, default=0, help='Buffer Steps in Transaction Cost Case')
 parser.add_argument('--demo_path', type=str, default='', help='Demo Path')
@@ -252,7 +254,7 @@ def main(argv):
         observation_network=agent_networks['observation'],
         n_step=args.n_step,
         discount=1.0,
-        sigma=0.3,  # pytype: disable=wrong-arg-types
+        sigma=args.sigma,  # pytype: disable=wrong-arg-types
         checkpoint=False,
         logger=loggers['learner'],
         batch_size=args.batch_size,
@@ -266,15 +268,8 @@ def main(argv):
         demonstration_step=args.demo_step,
     )
 
-    # Create the environment loop used for training.
-    if not args.eval_only:
-        train_loop = acme.EnvironmentLoop(
-            environment, agent, label='train_loop', logger=loggers['train_loop'])
-        train_loop.run(num_episodes=args.train_sim)
-        save_policy(agent._learner._policy_network, work_folder)
-
     # Create the evaluation policy.
-    if args.eval_only:
+    if args.eval_only or args.continue_train:
         policy_net = agent._learner._policy_network
         if args.agent_path == '':
             load_policy(policy_net, work_folder)
@@ -289,6 +284,14 @@ def main(argv):
             agent_networks['observation'],
             agent_networks['policy'],
         ])
+        
+    # Create the environment loop used for training.
+    if not args.eval_only:
+        train_loop = acme.EnvironmentLoop(
+            environment, agent, label='train_loop', logger=loggers['train_loop'])
+        train_loop.run(num_episodes=args.train_sim)
+        save_policy(agent._learner._policy_network, work_folder)
+
 
     # Create the evaluation actor and loop.
     eval_actor = actors.FeedForwardActor(policy_network=eval_policy)

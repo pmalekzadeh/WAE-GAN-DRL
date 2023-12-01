@@ -34,3 +34,7 @@ class MixSDESimulator(SDESimulator):
     def reset(self, *args, **kwargs):
         self.current_simulator = np.random.choice(self.simulators, p=self.probabilities)
         return self.current_simulator.reset(*args, **kwargs)
+
+    def add_observer(self, observer):
+        for simulator in self.simulators:
+            simulator.add_observer(observer)

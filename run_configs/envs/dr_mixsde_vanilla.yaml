@@ -10,7 +10,7 @@ train_env:
   params:
     portfolio:
       ref: mix_portfolio
-    episode_length: 20
+    episode_length: 30
     vega_state: True
     scale_action: True
     action_low: -0.2
@@ -21,7 +21,7 @@ eval_env:
   params:
     portfolio:
       ref: sabr_portfolio
-    episode_length: 20
+    episode_length: 30
     vega_state: True
     scale_action: True
     action_low: -0.2
@@ -40,8 +40,12 @@ mix_portfolio:
           ref: mix_sde
         call: [True]
         moneyness: [1.0]
-        ttm: [40]
+        ttm: [60]
         shares: [-1.0]
+        sim_moneyness_mean: 1.0
+        sim_moneyness_std: 0.0
+        sim_ttms: [60]
+        sim_call: [True]
     hedging_options:
       class_name: VanillaOption
       params:
@@ -49,7 +53,7 @@ mix_portfolio:
           ref: mix_sde
         sim_moneyness_mean: 1.0
         sim_moneyness_std: 0.0
-        sim_ttms: [20]
+        sim_ttms: [30]
         sim_call: [True]
 
 sabr_portfolio:
@@ -65,8 +69,12 @@ sabr_portfolio:
           ref: sabr_sde
         call: [True]
         moneyness: [1.0]
-        ttm: [40]
+        ttm: [60]
         shares: [-1.0]
+        sim_moneyness_mean: 1.0
+        sim_moneyness_std: 0.0
+        sim_ttms: [60]
+        sim_call: [True]
     hedging_options:
       class_name: VanillaOption
       params:
@@ -74,10 +82,10 @@ sabr_portfolio:
           ref: sabr_sde
         sim_moneyness_mean: 1.0
         sim_moneyness_std: 0.0
-        sim_ttms: [20]
+        sim_ttms: [30]
         sim_call: [True]
 
-bsm_sde:
+dr_bsm_sde:
   class_name: BSMSimulator
   params:
     s: 10.0
@@ -95,10 +103,27 @@ sabr_sde:
     vol: 0.3
     volvol: 0.6
 
+dr_sabr_sde:
+  class_name: SABRSimulator
+  params:
+    s: 10.0
+    vol: 
+      class_name: DRGenerator
+      params:
+        distribution: uniform
+        loc: 0.05
+        scale: 0.8
+    volvol: 
+      class_name: DRGenerator
+      params:
+        distribution: uniform
+        loc: 0.05
+        scale: 0.8
+
 mix_sde:
   class_name: MixSDESimulator
   params:
     simulators:
-      - ref: bsm_sde
-      - ref: sabr_sde
-    probabilities: [0.5, 0.5]
+      - ref: dr_bsm_sde
+      - ref: dr_sabr_sde
+    probabilities: [0.2, 0.8]
