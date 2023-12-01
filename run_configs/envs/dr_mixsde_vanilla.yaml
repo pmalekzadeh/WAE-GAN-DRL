@@ -41,7 +41,7 @@ mix_portfolio:
         call: [True]
         moneyness: [1.0]
         ttm: [40]
-        shares: [1.0]
+        shares: [-1.0]
     hedging_options:
       class_name: VanillaOption
       params:
@@ -66,7 +66,7 @@ sabr_portfolio:
         call: [True]
         moneyness: [1.0]
         ttm: [40]
-        shares: [1.0]
+        shares: [-1.0]
     hedging_options:
       class_name: VanillaOption
       params:

@@ -40,8 +40,12 @@ bsm_portfolio:
         call: [True]
         moneyness: [1.0]
         ttm: [20]
-        shares: [1.0]
+        shares: [-1.0]
         barrier: [10.0]
+        sim_moneyness_mean: 1.0
+        sim_moneyness_std: 0.0
+        sim_ttms: [20]
+        sim_call: [True]
     hedging_options:
       class_name: VanillaOption
       params:
@@ -66,8 +70,12 @@ sabr_portfolio:
         call: [True]
         moneyness: [1.0]
         ttm: [20]
-        shares: [1.0]
+        shares: [-1.0]
         barrier: [10.0]
+        sim_moneyness_mean: 1.0
+        sim_moneyness_std: 0.0
+        sim_ttms: [20]
+        sim_call: [True]
     hedging_options:
       class_name: VanillaOption
       params:

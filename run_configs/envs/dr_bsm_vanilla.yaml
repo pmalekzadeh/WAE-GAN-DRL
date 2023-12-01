@@ -41,7 +41,7 @@ bsm_portfolio:
         call: [True]
         moneyness: [1.0]
         ttm: [60]
-        shares: [1.0]
+        shares: [-1.0]
         sim_moneyness_mean: 1.0
         sim_moneyness_std: 0.0
         sim_ttms: [60]
@@ -70,7 +70,7 @@ sabr_portfolio:
         call: [True]
         moneyness: [1.0]
         ttm: [60]
-        shares: [1.0]
+        shares: [-1.0]
         sim_moneyness_mean: 1.0
         sim_moneyness_std: 0.0
         sim_ttms: [60]
