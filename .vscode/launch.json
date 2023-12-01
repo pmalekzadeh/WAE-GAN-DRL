@@ -1,0 +1,100 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": false
+        },
+        {
+            "name": "one_day_opt_run",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/one_day_optimal_run.py",
+            "args": [
+                "-eval_sim=1",
+                "-obj_func=cvar",
+                "-threshold=0.95",
+                // "-init_ttm=20",
+                "-poisson_rate=0.0",
+                // "-liab_ttms=20",
+                "-logger_prefix=short_dip/stress/l_shape_vol0.5/myopic/cvar95",
+                "-stress=True",
+                "-stress_path=stress_scenarios/stress_l_shape_vol50.csv",
+                // "-gbm=True",
+                "-barrier_level=8.7",
+                "-barrier_strike=10.8",
+                "-long_short=-1",
+                "-S0=10.0",
+                // "-action_space=-1.5,2.0"
+                "-record_demo=False"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "dist_rl_run",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/run_dist.py",
+            "args": [
+                "--flagfile=run_configs/d4pg_bsm_vanilla.cfg"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "rl_run",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/run_d3pg.py",
+            "args": [
+                "@run_configs/agents/d3pg.cfg",
+                "--env_config=run_configs/envs/dr_bsm_vanilla.yaml",
+                "--logger_prefix=logs/dr_bsm_vanilla/d3pg/poisson1",
+                "--bsm_portfolio.client_trade_poisson_rate=1.0",
+                "--sabr_portfolio.client_trade_poisson_rate=1.0"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "benchmark_run",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/run_benchmark.py",
+            "args": [
+                "@run_configs/agents/delta.cfg",
+                "--env_config=run_configs/envs/bsm_vanilla.yaml",
+                "--logger_prefix=logs/bsm_vanilla/delta_vol0.2_poisson1",
+                "--bsm_sde.vol=0.2",
+                "--bsm_portfolio.client_trade_poisson_rate=0.0",
+                "--sabr_portfolio.client_trade_poisson_rate=0.0"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "console": "integratedTerminal",
+            "justMyCode": false
+        }
+    ]
+}
