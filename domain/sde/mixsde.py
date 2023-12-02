@@ -1,4 +1,4 @@
-from typing import Sequence
+from typing import Any, Sequence
 
 import numpy as np
 
@@ -38,3 +38,7 @@ class MixSDESimulator(SDESimulator):
     def add_observer(self, observer):
         for simulator in self.simulators:
             simulator.add_observer(observer)
+    
+    def __getattr__(self, name: str):
+        # Expose any other attributes of the underlying environment.
+        return getattr(self.current_simulator, name)

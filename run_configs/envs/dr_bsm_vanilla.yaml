@@ -11,7 +11,6 @@ train_env:
     portfolio:
       ref: bsm_portfolio
     episode_length: 30
-    vega_state: True
     scale_action: True
     action_low: -0.2
     action_high: 1.2
@@ -22,7 +21,6 @@ eval_env:
     portfolio:
       ref: sabr_portfolio
     episode_length: 30
-    vega_state: True
     scale_action: True
     action_low: -0.2
     action_high: 1.2

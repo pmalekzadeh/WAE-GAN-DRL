@@ -1,4 +1,5 @@
 '''A trading environment'''
+from typing import List, Optional
 import numpy as np
 import dataclasses
 import gym
@@ -87,7 +88,15 @@ class DREnv(gym.Env):
     """
     Trading Environment;
     """
-
+    STATE_ORDER = ["stock_price", "hedging_implvol",
+                   "liab_port_value", "port_delta",
+                   "port_gamma", "port_vega", "ttm",
+                   "barrier_crossing_index",
+                   "inst_vol", "sabr_volvol"]
+    STATE_LOW_BOUND = np.array([0., 0., -500, -500, -500., -500., 
+                                0., 0., 0., 0.])
+    STATE_HIGH_BOUND = np.array([500, 10., 500, 500, 500., 500., 
+                                 100., 1., 10., 10.])
     # trade_freq in unit of day, e.g 2: every 2 day; 0.5 twice a day;
     def __init__(self, 
                  portfolio: Portfolio,
@@ -95,7 +104,7 @@ class DREnv(gym.Env):
                  action_low: float,
                  action_high: float,
                  seed: int = 1234,
-                 vega_state: bool = False,
+                 states: Optional[List[str]] =None,
                  record_demo: bool = False,
                  scale_action: bool = False,
                  logger_folder: str = None,
@@ -111,35 +120,34 @@ class DREnv(gym.Env):
         self.episode_length = episode_length
         self.n_step = 0
         self.n_episode = -1
+        # Check if all elements in states are in STATE_ORDER
+        if states is None:
+            states = self.STATE_ORDER.copy()
+            if not isinstance(self.portfolio.client_options, BarrierDIPOption):
+                states.remove("barrier_crossing_index")
+                
+        if not all(state in self.STATE_ORDER for state in states):
+            raise ValueError("All elements in states must be in STATE_ORDER")
+
+        # Sort states based on the order of elements in STATE_ORDER
+        self.env_states = sorted(states, key=self.STATE_ORDER.index)
         
         # Action space: HIGH value has to be adjusted with respect to the option used for hedging
         self.action_space = spaces.Box(low=np.array([action_low]),
                                        high=np.array([action_high]), dtype=np.float32)
 
         # Observation space
-        obs_lowbound = np.array([
-            0.,   # stock price
-            0.,   # implied vol 
-            -np.inf,  # portfolio delta
-            -np.inf,  # portfolio gamma
-            0         # episode time to terminal step
-        ])
-        obs_highbound = np.array([
-            np.inf,
-            10, 
-            np.inf,
-            np.inf,
-            self.episode_length
-        ])
-        self.vega_state = vega_state
-        if vega_state:
-            obs_lowbound = np.concatenate([obs_lowbound, [-999999]])
-            obs_highbound = np.concatenate([obs_highbound, [999999]])
+        obs_lowbound = self.STATE_LOW_BOUND[[self.STATE_ORDER.index(state) for state in self.env_states]]
+        obs_highbound = self.STATE_HIGH_BOUND[[self.STATE_ORDER.index(state) for state in self.env_states]]
         self.observation_space = spaces.Box(low=obs_lowbound, high=obs_highbound, dtype=np.float32)
         # observations for record
         self.prev_obs = None
         self.prev_reward = None
         self.seed(seed)
+
+    def get_state_index(self, state):
+        assert state in self.env_states, f"state {state} not in env_states"
+        return self.env_states.index(state)
 
     def seed(self, seed):
         set_seed(seed)
@@ -170,25 +178,32 @@ class DREnv(gym.Env):
         return self.prev_obs
 
     def get_state(self, result):
-        states = np.array([self.portfolio.stock.sde.stock_price(), 
-                           self.portfolio.sde.implied_vol(np.array(self.portfolio.hedging_options.sim_ttms), 
-                                                          np.array([1.]))[0],
-                           self.portfolio.get_delta(),
-                           self.portfolio.get_gamma(),
-                           self.episode_length-self.n_step])
-        result.state_stock_price_4 = states[0]
-        result.state_atm_vol_4 = states[1]
-        result.state_delta_4 = states[2]
-        result.state_gamma_4 = states[3]
-        result.state_ttm_4 = states[4]
-        if self.vega_state:
-            states = np.concatenate([states, [self.portfolio.get_vega()]])
-            result.state_vega_4 = states[5]
+        states = {
+            'stock_price': self.portfolio.stock.sde.stock_price(),
+            'hedging_implvol': self.portfolio.sde.implied_vol(np.array(self.portfolio.hedging_options.sim_ttms), 
+                                                              np.array([1.]))[0],
+            'liab_port_value': self.portfolio.client_options.get_value(),
+            'port_delta': self.portfolio.get_delta(),
+            'port_gamma': self.portfolio.get_gamma(),
+            'port_vega': self.portfolio.get_vega(),
+            'ttm': self.episode_length-self.n_step,
+            'inst_vol': self.portfolio.sde.vol,
+            'sabr_volvol': getattr(self.portfolio.sde, 'volvol', 0.)
+        }
         if isinstance(self.portfolio.client_options, BarrierDIPOption):
             # add barrier crossing indicator to state
-            states = np.concatenate([states, [self.portfolio.client_options.get_barrier_crossing_indicator()]])
-            result.state_barrier_crossing_indicator_4 = states[6]
-        return states
+            states['barrier_crossing_index'] = self.portfolio.client_options.get_barrier_crossing_indicator()
+            result.state_barrier_crossing_indicator_4 = states['barrier_crossing_index']
+
+        result.state_stock_price_4 = states['stock_price']
+        result.state_atm_vol_4 = states['hedging_implvol']
+        result.state_delta_4 = states['port_delta']
+        result.state_gamma_4 = states['port_gamma']
+        result.state_ttm_4 = states['ttm']
+        result.state_vega_4 = states['port_vega']
+
+        return_states = np.array([states[state] for state in self.env_states])    
+        return return_states
 
 
     def terminal_state(self):
@@ -210,7 +225,7 @@ class DREnv(gym.Env):
         gamma_action_bound = -self.portfolio.get_gamma()/hedging_option.get_gamma()
         action_low = [0, gamma_action_bound]
         action_high = [0, gamma_action_bound]
-        if self.vega_state:
+        if 'port_vega' in self.env_states:
             vega_action_bound = -self.portfolio.get_vega()/hedging_option.get_vega()
             action_low.append(vega_action_bound)
             action_high.append(vega_action_bound)
@@ -234,7 +249,7 @@ class DREnv(gym.Env):
         gamma_action_bound = -self.portfolio.get_gamma()/hedging_option.get_gamma()
         action_low = [0, gamma_action_bound]
         action_high = [0, gamma_action_bound]
-        if self.vega_state:
+        if 'port_vega' in self.env_states:
             vega_action_bound = -self.portfolio.get_vega()/hedging_option.get_vega()
             action_low.append(vega_action_bound)
             action_high.append(vega_action_bound)
