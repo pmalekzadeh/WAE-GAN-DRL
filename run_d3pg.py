@@ -23,7 +23,7 @@ from domain.sde import *
 from domain.asset.base import *
 from domain.asset.portfolio import Portfolio
 from env.trade_env import DREnv
-from config.config_loader import ConfigLoader
+from config.config_loader import ConfigLoader, save_args_to_file
 from agent.agent import D4PG
 # Note that the GammaVegaTradingEnv for Exotic Options are never implemented, right now we are only studying the delta hedging behaviours.
 import agent.distributional as ad
@@ -82,6 +82,7 @@ def make_environment(label, env_config_file, env_cmd_args, logger_prefix, seed=1
     # Make sure the environment obeys the dm_env.Environment interface.
     config_loader = ConfigLoader(config_file=env_config_file, cmd_args=env_cmd_args)
     config_loader.load_objects()
+    config_loader.save_config(os.path.join(logger_prefix, 'env.yaml'))
     environment: DREnv = config_loader[label] if label in config_loader.objects else config_loader['env']
     environment.seed(seed)
     environment.logger = make_logger(logger_prefix, label) if label == 'eval_env' else None
@@ -229,6 +230,9 @@ def main(argv):
     work_folder = args.logger_prefix
     if os.path.exists(work_folder):
         shutil.rmtree(work_folder)
+    os.makedirs(work_folder, exist_ok=True)
+    save_args_to_file(args, os.path.join(work_folder, 'agent.cfg'))
+    
     # Create an environment, grab the spec, and use it to create networks.
     environment = make_environment('train_env', args.env_config, env_cmd_args, args.logger_prefix, args.actor_seed)
     environment_spec = specs.make_environment_spec(environment)

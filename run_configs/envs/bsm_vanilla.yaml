@@ -13,6 +13,14 @@ train_env:
     scale_action: True
     action_low: -0.2
     action_high: 1.2
+    vega_ratio: False
+    states:
+      - stock_price
+      - hedging_implvol
+      - port_delta
+      - port_gamma
+      - ttm
+      - port_vega
 
 eval_env:
   class_name: DREnv
@@ -23,6 +31,14 @@ eval_env:
     scale_action: True
     action_low: -0.2
     action_high: 1.2
+    vega_ratio: False
+    states:
+      - stock_price
+      - hedging_implvol
+      - port_delta
+      - port_gamma
+      - ttm
+      - port_vega
 
 bsm_portfolio:
   class_name: Portfolio

@@ -105,6 +105,7 @@ class DREnv(gym.Env):
                  action_high: float,
                  seed: int = 1234,
                  states: Optional[List[str]] =None,
+                 vega_ratio: bool = True,
                  record_demo: bool = False,
                  scale_action: bool = False,
                  logger_folder: str = None,
@@ -131,7 +132,7 @@ class DREnv(gym.Env):
 
         # Sort states based on the order of elements in STATE_ORDER
         self.env_states = sorted(states, key=self.STATE_ORDER.index)
-        
+        self.vega_ratio = vega_ratio
         # Action space: HIGH value has to be adjusted with respect to the option used for hedging
         self.action_space = spaces.Box(low=np.array([action_low]),
                                        high=np.array([action_high]), dtype=np.float32)
@@ -225,7 +226,7 @@ class DREnv(gym.Env):
         gamma_action_bound = -self.portfolio.get_gamma()/hedging_option.get_gamma()
         action_low = [0, gamma_action_bound]
         action_high = [0, gamma_action_bound]
-        if 'port_vega' in self.env_states:
+        if self.vega_ratio:
             vega_action_bound = -self.portfolio.get_vega()/hedging_option.get_vega()
             action_low.append(vega_action_bound)
             action_high.append(vega_action_bound)
@@ -249,7 +250,7 @@ class DREnv(gym.Env):
         gamma_action_bound = -self.portfolio.get_gamma()/hedging_option.get_gamma()
         action_low = [0, gamma_action_bound]
         action_high = [0, gamma_action_bound]
-        if 'port_vega' in self.env_states:
+        if self.vega_ratio:
             vega_action_bound = -self.portfolio.get_vega()/hedging_option.get_vega()
             action_low.append(vega_action_bound)
             action_high.append(vega_action_bound)

@@ -49,7 +49,7 @@ import numpy as np
 class VegaHedgeAgent(core.Actor):
     def __init__(self, env, hedge_ratio=1.0) -> None:
         self.env = env
-        assert env.vega_state, 'vega state is not enabled'
+        assert 'port_vega' in self.env.env_states, 'vega state is not enabled'
         self.hedge_ratio = hedge_ratio
         super().__init__()
 

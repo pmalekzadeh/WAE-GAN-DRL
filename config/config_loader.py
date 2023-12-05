@@ -1,5 +1,7 @@
 import yaml
 import ast
+import shlex
+from copy import deepcopy
 
 """Load config from yaml file and create objects from config
 
@@ -61,6 +63,7 @@ class ConfigLoader:
         self.config_file = config_file
         self.config_data = self.argparser(config_data, cmd_args) if config_data \
             else self.load_config(cmd_args)
+        self.config_data_dict = deepcopy(self.config_data)
         self.objects = {}
 
     def load_config(self, cmd_args):
@@ -72,6 +75,10 @@ class ConfigLoader:
         if cmd_args:
             config_data = self.argparser(config_data, cmd_args)
         return config_data
+
+    def save_config(self, config_file):
+        with open(config_file, "w") as file:
+            yaml.dump(self.config_data_dict, file)
 
     def load_objects(self):
         for name, obj_config in self.config_data.items():
@@ -138,3 +145,11 @@ class ConfigLoader:
         obj = ConfigLoader.registered_classes[class_name](**params)
         self.objects[name] = obj
         return obj
+
+def save_args_to_file(args, filename='args.txt'):
+    with open(filename, 'w') as file:
+        # Write arguments in a way they can be read later. 
+        # For example, as '--arg1 value --arg2 value' etc.
+        args_dict = vars(args)
+        for arg_key, arg_value in args_dict.items():
+            file.write('--{} {}\n'.format(arg_key, shlex.quote(str(arg_value))))

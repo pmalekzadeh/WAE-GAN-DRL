@@ -24,7 +24,7 @@ from domain.sde import *
 from domain.asset.base import *
 from domain.asset.portfolio import Portfolio
 from env.trade_env import DREnv
-from config.config_loader import ConfigLoader
+from config.config_loader import ConfigLoader, save_args_to_file
 from agent.agent_distributed import DistributedD4PG as D4PG
 import agent.distributional as ad
 from analysis.gen_stats import generate_stat
@@ -71,6 +71,7 @@ def make_logger(work_folder, label, terminal=False):
 def make_environment(env_config_file, env_cmd_args, logger_prefix, label='', seed=1234) -> dm_env.Environment:
     config_loader = ConfigLoader(config_file=env_config_file, cmd_args=env_cmd_args)
     config_loader.load_objects()
+    config_loader.save_config(os.path.join(logger_prefix, 'env.yaml'))
     if 'actor' in label:
         env_type = 'train_env'
     elif 'evaluator' in label:
@@ -225,6 +226,8 @@ def main(argv):
     work_folder = args.logger_prefix
     if os.path.exists(os.path.join(work_folder, 'logs')):
         shutil.rmtree(os.path.join(work_folder, 'logs'))
+    os.makedirs(work_folder, exist_ok=True)
+    save_args_to_file(args, os.path.join(work_folder, 'agent.cfg'))
     # Create an environment, grab the spec, and use it to create networks.
     if args.critic == 'c51':
         agent_networks_factory = make_networks

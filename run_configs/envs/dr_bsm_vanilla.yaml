@@ -14,6 +14,14 @@ train_env:
     scale_action: True
     action_low: -0.2
     action_high: 1.2
+    vega_ratio: True
+    states:
+      - stock_price
+      - hedging_implvol
+      - port_delta
+      - port_gamma
+      - ttm
+      - port_vega
 
 eval_env:
   class_name: DREnv
@@ -24,18 +32,26 @@ eval_env:
     scale_action: True
     action_low: -0.2
     action_high: 1.2
+    vega_ratio: True
+    states:
+      - stock_price
+      - hedging_implvol
+      - port_delta
+      - port_gamma
+      - ttm
+      - port_vega
 
 bsm_portfolio:
   class_name: Portfolio
   params:
     sde:
-      ref: bsm_sde
+      ref: dr_bsm_sde
     client_trade_poisson_rate: 0.0
     client_options:
       class_name: VanillaOption
       params:
         sde:
-          ref: bsm_sde
+          ref: dr_bsm_sde
         call: [True]
         moneyness: [1.0]
         ttm: [60]
@@ -48,7 +64,7 @@ bsm_portfolio:
       class_name: VanillaOption
       params:
         sde:
-          ref: bsm_sde
+          ref: dr_bsm_sde
         sim_moneyness_mean: 1.0
         sim_moneyness_std: 0.0
         sim_ttms: [30]
@@ -83,7 +99,7 @@ sabr_portfolio:
         sim_ttms: [30]
         sim_call: [True]
 
-bsm_sde:
+dr_bsm_sde:
   class_name: BSMSimulator
   params:
     s: 10.0
