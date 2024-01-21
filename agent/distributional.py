@@ -1,6 +1,7 @@
 from absl import flags
 from typing import Optional, Sequence, Union
 import enum
+from acme.tf import networks
 
 from acme.tf.networks import distributions as ad
 from acme.tf.networks import DiscreteValuedHead, CriticMultiplexer, LayerNormMLP
@@ -9,6 +10,11 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 from tensorflow_probability.python.internal import dtype_util
 import numpy as np
+from tensorflow_probability.python.internal import tensorshape_util
+from tensorflow_probability.python.internal import parameter_properties
+from tensorflow_probability.python.internal import prefer_static as ps
+from tensorflow_probability.python.internal import reparameterization
+
 from scipy.stats import norm
 
 tfd = tfp.distributions
@@ -257,6 +263,144 @@ class QuantileDiscreteValuedHead(snt.Module):
                                     probs=probs)
 
 
+
+################
+class GeneratorHead(snt.Module):
+    def __init__(self, n_samples, w_init=snt.initializers.VarianceScaling(1e-4), b_init=snt.initializers.Zeros()):
+        super().__init__(name='GeneratorHead')
+        self.n_samples = n_samples
+        self._distributional_layer = snt.Linear(self.n_samples, w_init=w_init, b_init=b_init)
+
+    def __call__(self, inputs: tf.Tensor) -> tfd.Distribution:
+        # Generate returns for each sample in the batch.
+        generated_returns = self._distributional_layer(inputs)
+
+        # Reshape to [batch_size, n_samples] to represent an empirical distribution for each batch element.
+        generated_returns = tf.reshape(generated_returns, [tf.shape(inputs)[0], self.n_samples])
+
+        return tfd.Empirical(samples=generated_returns, event_ndims=1)
+
+
+class EmpiricalDistribution(tfd.Empirical):
+    def __init__(self, samples, event_ndims=0, validate_args=False, allow_nan_stats=True, name='Empirical'):
+        super().__init__(samples=samples, event_ndims=event_ndims, validate_args=validate_args, allow_nan_stats=allow_nan_stats, name=name)
+
+    def cvar(self, th) -> tf.Tensor:
+        quantile = 1 - th
+        sorted_samples = tf.sort(self.samples, axis=-1)
+        cdf = tf.cumsum(self.probs_parameter(), axis=-1)
+        exceed_quantile = cdf >= quantile
+        eligible_samples = tf.boolean_mask(sorted_samples, exceed_quantile)
+        return tf.reduce_mean(eligible_samples)
+
+    def probs_parameter(self):
+        sample_count = tf.cast(tf.shape(self.samples)[-1], self.samples.dtype)
+        return tf.fill(tf.shape(self.samples), 1.0 / sample_count)
+
+
+class EncoderHead(snt.Module):
+    """Module that outputs parameters for a Generalized Pareto Distribution."""
+
+    def __init__(self,  latent_dim: int, shape_layer_sizes: Sequence[int] = (512, 512, 256), scale_layer_sizes: Sequence[int] = (512, 512, 256),
+                 init_scale=0.3, min_scale=1e-6,
+                 w_init=snt.initializers.VarianceScaling(1e-4),
+                 b_init=snt.initializers.Zeros()):
+
+        super().__init__(name='EncoderMultivariateNormalDiagHead')
+
+        self._init_scale = init_scale
+        self._min_scale = min_scale
+        self.latent_dim=latent_dim
+
+        # Define location network
+        self._loc_layer = snt.Sequential([
+            networks.CriticMultiplexer(),
+            networks.LayerNormMLP(shape_layer_sizes, activate_final=True),
+            snt.Linear(latent_dim, w_init=w_init, b_init=b_init)
+        ])
+
+
+        # Define scale network
+        def scale_transformation(inputs):
+            # Apply softplus and ensure the scale is non-zero
+            scale = tf.nn.softplus(inputs)
+            zero = tf.zeros_like(scale)
+            scale *= self._init_scale / tf.nn.softplus(zero)
+            scale += self._min_scale
+            return scale
+
+        self._scale_layer = snt.Sequential([
+            networks.CriticMultiplexer(),
+            networks.LayerNormMLP(scale_layer_sizes, activate_final=True),
+            snt.Linear(latent_dim, w_init=w_init, b_init=b_init),
+            scale_transformation  # Add this layer for the scale transformation
+        ])
+
+        @property
+        def loc_network(self):
+            return self._loc_layer
+
+        @property
+        def scale_network(self):
+            return self._scale_layer
+
+        def __call__(self, inputs: tf.Tensor) -> tfd.Distribution:
+            loc = self._loc_layer(inputs)
+            scale = self._scale_layer(inputs)
+            return tfd.MultivariateNormalDiag(loc=loc, scale_diag=scale)   #.sample(N) return N samples
+
+
+class PriorHead(snt.Module):
+    """Module that outputs parameters for a Generalized Pareto Distribution."""
+
+    def __init__(self,  latent_dim: int, shape_layer_sizes: Sequence[int] = (512, 256), scale_layer_sizes: Sequence[int] = (512, 256),
+                 init_scale=0.3, min_scale=1e-6,
+                 w_init=snt.initializers.VarianceScaling(1e-4),
+                 b_init=snt.initializers.Zeros()):
+
+        super().__init__(name='PriorMultivariateNormalDiagHead')
+
+        self._init_scale = init_scale
+        self._min_scale = min_scale
+        self.latent_dim=latent_dim
+
+        # Define shape network
+        self._loc_layer = snt.Sequential([
+            networks.CriticMultiplexer(),
+            networks.LayerNormMLP(shape_layer_sizes, activate_final=True),
+            snt.Linear(latent_dim, w_init=w_init, b_init=b_init)
+        ])
+
+        # Define scale network
+        def scale_transformation(inputs):
+            # Apply softplus and ensure the scale is non-zero
+            scale = tf.nn.softplus(inputs)
+            zero = tf.zeros_like(scale)
+            scale *= self._init_scale / tf.nn.softplus(zero)
+            scale += self._min_scale
+            return scale
+
+        self._scale_layer = snt.Sequential([
+            networks.CriticMultiplexer(),
+            networks.LayerNormMLP(scale_layer_sizes, activate_final=True),
+            snt.Linear(latent_dim, w_init=w_init, b_init=b_init),
+            scale_transformation  # Add this layer for the scale transformation
+        ])
+
+        @property
+        def loc_network(self):
+            return self._loc_layer
+
+        @property
+        def scale_network(self):
+            return self._scale_layer
+
+        def __call__(self, inputs: tf.Tensor) -> tfd.Distribution:
+            loc = self._loc_layer(inputs)
+            scale = self._scale_layer(inputs)
+            return tfd.MultivariateNormalDiag(loc=loc, scale_diag=scale)   #.sample(N) return N samples
+
+
 class IQNHead(snt.Module):
     def __init__(self, th, n_cos=64, n_tau=8, n_k=32, layer_size: int = 256,
                  quantiles: np.ndarray = np.arange(0.01, 1.0, 0.01),
@@ -354,3 +498,18 @@ def quantile_regression(q_tm1: QuantileDistribution, r_t: tf.Tensor,
                                    tf.cast(diff < 0, diff.dtype)) / k
 
     return tf.reduce_mean(loss, (0, -1))
+
+# def discriminator_loss(x_tilde_t: tf.Tensor, x_t: tf.Tensor,
+#                         z_t: tf.Tensor,
+#                         z_tilde_t: tf.Tensor,
+#                         dis_network: snt.Module):
+#     """Implements Quantile Regression Loss
+#     q_tm1: critic distribution of t-1
+#     r_t:   reward
+#     d_t:   discount
+#     q_t:   target critic distribution of t
+#     """
+#
+#     loss = dis_network(x_tilde_t,z_t,  )
+#
+#     return tf.reduce_mean(loss, (0, -1))

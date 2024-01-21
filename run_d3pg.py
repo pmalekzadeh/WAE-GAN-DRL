@@ -171,6 +171,69 @@ def make_quantile_networks(
         'observation': observation_network,
     }
 
+####
+def make_GAN_networks(
+    action_spec: specs.BoundedArray,
+    policy_layer_sizes: Sequence[int] = (256, 256, 256),
+    critic_layer_sizes: Sequence[int] = (512, 512, 256),
+    n_smaples: int =100,
+    latent_dim: int = 2,
+    quantile_interval: float = 0.01
+) -> Mapping[str, types.TensorTransformation]:
+    """Creates the networks used by the agent."""
+
+    # Get total number of action dimensions from action spec.
+    num_dimensions = np.prod(action_spec.shape, dtype=int)
+
+    # Create the shared observation network; here simply a state-less operation.
+    observation_network = tf2_utils.batch_concat
+
+    # Create the policy network.
+    policy_network = snt.Sequential([
+        networks.LayerNormMLP(policy_layer_sizes, activate_final=True),
+        networks.NearZeroInitializedLinear(num_dimensions),
+        networks.TanhToSpec(action_spec),
+    ])
+    # Create the critic network.
+    quantiles = np.arange(quantile_interval, 1.0, quantile_interval)
+    critic_network = snt.Sequential([
+        # The multiplexer concatenates the observations/actions.
+        networks.CriticMultiplexer(),
+        networks.LayerNormMLP(critic_layer_sizes, activate_final=True),
+        ad.QuantileDiscreteValuedHead(
+            quantiles=quantiles, prob_type=ad.QuantileDistProbType.MID),
+    ])
+
+    generator_network = snt.Sequential([
+        # The multiplexer concatenates the observations/actions/latent.
+        networks.CriticMultiplexer(),
+        networks.LayerNormMLP(critic_layer_sizes, activate_final=True),
+        ad.GeneratorHead(len(quantiles))
+
+    ])
+
+    discriminator_network= generator_network = snt.Sequential([
+        # The multiplexer concatenates the observations/actions/latent.
+        networks.CriticMultiplexer(),
+        networks.LayerNormMLP(critic_layer_sizes, activate_final=True),
+        snt.Linear(1),
+        tf.nn.sigmoid   ## making the output to be between 0 and 1
+    ])
+
+    encoder_network=ad.EncoderHead(latent_dim=latent_dim)
+    # prior_network=ad.PriorHead(latent_dim=latent_dim)
+
+
+    return {
+        'policy': policy_network,
+        'generator': generator_network,
+        'encoder_loc': encoder_network.loc_network,
+        'encoder_scale': encoder_network.scale_network,
+        'prior_loc': prior_network.loc_network,
+        'prior_scale': prior_network.scale_network,
+        'discriminator': discriminator_network,
+        'observation': observation_network,
+    }
 
 def make_iqn_networks(
     action_spec: specs.BoundedArray,
@@ -235,6 +298,10 @@ def main(argv):
         agent_networks = make_networks(action_spec=environment_spec.actions)
     elif args.critic == 'qr':
         agent_networks = make_quantile_networks(
+            action_spec=environment_spec.actions)
+
+    elif args.critic == 'GAN':
+        agent_networks = make_GAN_networks(
             action_spec=environment_spec.actions)
     elif args.critic == 'iqn':
         assert args.obj_func == 'cvar', 'IQN only support CVaR objective.'

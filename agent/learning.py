@@ -14,7 +14,7 @@
 # limitations under the License.
 
 """D4PG learner implementation."""
-
+import random
 import time
 from typing import Dict, Iterator, List, Optional, Union
 
@@ -33,7 +33,9 @@ import sonnet as snt
 import tensorflow as tf
 import tree
 
-from agent.distributional import quantile_regression
+from agent.distributional import quantile_regression, huber
+import tensorflow_probability as tfp
+tfd = tfp.distributions
 
 
 class D4PGLearner(acme.Learner):
@@ -46,8 +48,16 @@ class D4PGLearner(acme.Learner):
         self,
         policy_network: snt.Module,
         critic_network: snt.Module,
+        gen_network: snt.Module ,
+        disc_network: snt.Module,
+        encoder_loc_network: snt.Module,
+        encoder_scale_network: snt.Module,
         target_policy_network: snt.Module,
         target_critic_network: snt.Module,
+        target_gen_network: snt.Module,
+        target_disc_network: snt.Module,
+        target_encoder_loc_network: snt.Module,
+        target_encoder_scale_network: snt.Module,
         discount: float,
         target_update_period: int,
         dataset_iterator: Iterator[reverb.ReplaySample],
@@ -56,6 +66,7 @@ class D4PGLearner(acme.Learner):
         obj_func='var',
         critic_loss_type='c51',
         threshold=0.95,
+        decay_factor=.6,
         observation_network: types.TensorTransformation = lambda x: x,
         target_observation_network: types.TensorTransformation = lambda x: x,
         policy_optimizer: Optional[snt.Optimizer] = None,
@@ -111,8 +122,16 @@ class D4PGLearner(acme.Learner):
         # Store online and target networks.
         self._policy_network = policy_network
         self._critic_network = critic_network
+        self._gen_network=gen_network
+        self._disc_network = disc_network
+        self._encoder_loc_network = encoder_loc_network
+        self._encoder_scale_network = encoder_scale_network
         self._target_policy_network = target_policy_network
         self._target_critic_network = target_critic_network
+        self._target_gen_network = gen_network
+        self._target_disc_network = disc_network
+        self._target_encoder_loc_network = encoder_loc_network
+        self._target_encoder_scale_network = encoder_scale_network
 
         # Make sure observation networks are snt.Module's so they have variables.
         self._observation_network = tf2_utils.to_sonnet_module(
@@ -127,6 +146,7 @@ class D4PGLearner(acme.Learner):
         # Other learner parameters.
         self._discount = discount
         self._clipping = clipping
+        self.decay_factor=decay_factor
 
         # Necessary to track when to update target networks.
         self._num_steps = tf.Variable(0, dtype=tf.int32)
@@ -142,6 +162,9 @@ class D4PGLearner(acme.Learner):
         # Create optimizers if they aren't given.
         self._critic_optimizer = critic_optimizer or snt.optimizers.Adam(1e-4)
         self._policy_optimizer = policy_optimizer or snt.optimizers.Adam(1e-4)
+        self._gen_optimizer = policy_optimizer or snt.optimizers.Adam(1e-4)
+        self._disc_optimizer = policy_optimizer or snt.optimizers.Adam(1e-4)
+        self._encoder_optimizer = policy_optimizer or snt.optimizers.Adam(1e-4)
 
         # Expose the variables.
         policy_network_to_expose = snt.Sequential(
@@ -149,6 +172,10 @@ class D4PGLearner(acme.Learner):
         self._variables = {
             'critic': self._target_critic_network.variables,
             'policy': policy_network_to_expose.variables,
+            'generator': self._target_gen_network.variables,
+            'discriminator': self._target_disc_network.variables,
+            'encoder_scale': self._target_encoder_scale_network.variables,
+            'encoder_loc': self._target_encoder_loc_network.variables,
         }
 
         # Create a checkpointer and snapshotter objects.
@@ -158,26 +185,37 @@ class D4PGLearner(acme.Learner):
         if checkpoint:
             self._checkpointer = tf2_savers.Checkpointer(
                 directory=checkpoint_folder,
-                subdirectory='d4pg_learner',
+                subdirectory='d4pg_GAN_learner',
                 add_uid=False,
                 objects_to_save={
                     'counter': self._counter,
                     'policy': self._policy_network,
                     'critic': self._critic_network,
                     'observation': self._observation_network,
+                    'generator': self._gen_network,
+                    'discriminator': self._disc_network,
+                    'encoder_scale': self._encoder_scale_network,
+                    'encoder_loc': self._encoder_loc_network,
                     'target_policy': self._target_policy_network,
                     'target_critic': self._target_critic_network,
                     'target_observation': self._target_observation_network,
+                    'target_generator': self._target_gen_network,
+                    'target_discriminator': self._target_disc_network,
+                    'target_encoder_scale': self._target_encoder_scale_network,
+                    'target_encoder_loc': self._target_encoder_loc_network,
                     'policy_optimizer': self._policy_optimizer,
                     'critic_optimizer': self._critic_optimizer,
+                    'generator_optimizer':self._gen_optimizer,
+                    'discriminator_optimizer': self._disc_optimizer,
+                    'encoder_optimizer': self._encoder_optimizer
                     'num_steps': self._num_steps,
                 })
-            critic_mean = snt.Sequential(
-                [self._critic_network, acme_nets.StochasticMeanHead()])
+            gen_mean = snt.Sequential(
+                [self._gen_network, acme_nets.StochasticMeanHead()])
             self._snapshotter = tf2_savers.Snapshotter(
                 objects_to_save={
                     'policy': self._policy_network,
-                    'critic': critic_mean,
+                    'critic': gen_mean,
                 })
 
         # Do not record timestamps until after the first learning step is done.
@@ -192,11 +230,19 @@ class D4PGLearner(acme.Learner):
             *self._observation_network.variables,
             *self._critic_network.variables,
             *self._policy_network.variables,
+            *self._gen_network.variables,
+            *self._disc_network.variables,
+            *self._encoder_loc_network.variables,
+            *self._endcoder_scale_network.variables,
         )
         target_variables = (
             *self._target_observation_network.variables,
             *self._target_critic_network.variables,
             *self._target_policy_network.variables,
+            *self._target_gen_network.variables,
+            *self._target_disc_network.variables,
+            *self._target_encoder_loc_network.variables,
+            *self._target_endcoder_scale_network.variables,
         )
 
         # Make online -> target network update ops.
@@ -229,25 +275,64 @@ class D4PGLearner(acme.Learner):
             # the observation network training.
             o_t = tree.map_structure(tf.stop_gradient, o_t)
 
-            # Critic learning.
-            q_tm1 = self._critic_network(o_tm1, transitions.action)
-            q_t = self._target_critic_network(
-                o_t, self._target_policy_network(o_t))
+            batch_size = tf.shape(o_t)[0]
+            # Corrected way to generate z_target
+            z = tf.random.normal(shape=(batch_size, self.z_dim))  ##z
 
-            # Critic loss.
-            critic_loss = self._critic_loss_func(q_tm1, transitions.reward,
-                                                 discount * transitions.discount, q_t)
-            if self.per:
-                # PER: importance sampling weights.
-                priorities = tf.abs(critic_loss)
-                importance_weights = 1.0 / probs
-                importance_weights **= self.importance_sampling_exponent
-                importance_weights /= tf.reduce_max(importance_weights)
-                critic_loss *= tf.cast(importance_weights,
-                                       critic_loss.dtype)
+            g_t = self._generator_network(z, o_tm1, transitions.action)  #### g(s)
 
-            critic_loss = tf.reduce_mean(critic_loss, axis=[0])
+            x_t= transitions.reward \
+                                      + discount * transitions.discount* self._target_generator_network(z,o_t, self._target_policy_network(o_t) ) ## x= [batch_size, n_quantiles]
 
+            ## target prior_encoder for r_int
+            target_prior_encoder_loc = self._target_encoder_loc_network(o_tm1, transitions.action, g_t)
+            target_prior_encoder_scale = self._target_encoder_scale_network(o_tm1, transitions.action, g_t)
+            target_prior_encoder_dis = tfd.MultivariateNormalDiag(loc=target_prior_encoder_loc, scale_diag=target_prior_encoder_scale)
+
+            ## target posterior_encoder  for r_int
+            target_posterior_encoder_loc= self._target_encoder_loc_network (o_tm1, transitions.action, x_t)  ## x= [batch_size, self.z_dim]
+            target_posterior_encoder_scale=self._target_encoder_scale_network (o_tm1, transitions.action, x_t)
+            target_posterior_encoder_dis = tfd.MultivariateNormalDiag(loc=target_posterior_encoder_loc, scale_diag=target_posterior_encoder_scale)
+
+            ## intrinsic reward
+            r_intr= tfd.kl_divergence(target_posterior_encoder_dis, target_prior_encoder_dis)
+            r_combined= transitions.reward+ self.decay_factor * r_intr
+
+            critic_samples = r_combined\
+                                       + discount * transitions.discount * self._target_critic_network(o_t,
+                                                                                                          self._target_policy_network(
+                                                                                                              o_t))
+            critic_loss= tf.reduce_mean(
+                huber(critic_samples - self._critic_network(o_tm1, transitions.action), 1), (0, -1))
+
+            ##  encoder sampling
+            encoder_loc = self._encoder_loc_network(o_tm1, transitions.action,
+                                                                            x_t)  ## [batch_size, self.z_dim]
+            encoder_scale = self._encoder_scale_network(o_tm1, transitions.action,
+                                                                                x_t)
+            encoder_dis = tfd.MultivariateNormalDiag(loc=encoder_loc,
+                                                                      scale_diag=encoder_scale)
+
+            encoder_samples = encoder_dis.sample()  ## z_tilde should be [batch_size, self.z_dim]
+            encoder_samples = tf.squeeze(encoder_samples, axis=0)
+
+            z = tf.random.normal(shape=(batch_size, self.z_dim))  ##z
+            generator_samples = self._generator_network(z, o_tm1, transitions.action)  #### x_tilde
+
+            # discriminator loss
+            disc_output_1= self._disc_network(generator_samples, z, o_tm1, transitions.action )
+            disc_output_2 = self._disc_network(x_t, encoder_samples, o_tm1, transitions.action)
+
+            disc_loss= -tf.reduce_mean(tf.log(disc_output_1)+ tf.log(1-disc_output_2 ), (0, -1))
+
+            ### encoder loss
+            encoder_loss = -tf.reduce_mean(tf.log(1-disc_output_1) + tf.log(disc_output_2), (0, -1))
+
+            # gen loss (mean of squared differences)
+            squared_diff = tf.pow(x_t - self._generator_network(encoder_samples, o_tm1, transitions.action), 2)
+            gen_loss = tf.reduce_mean(squared_diff, (0, -1))
+
+            ## actor loss and learning
             # Policy loss
             if self._run_demo:
                 # Policy loss MSE supervised learning
@@ -284,16 +369,37 @@ class D4PGLearner(acme.Learner):
                     clip_norm=self._clipping)
                 policy_loss = tf.reduce_mean(policy_loss, axis=[0])
 
+
+            if self.per:
+                # PER: importance sampling weights.
+                priorities = tf.abs(critic_loss)
+                importance_weights = 1.0 / probs
+                importance_weights **= self.importance_sampling_exponent
+                importance_weights /= tf.reduce_max(importance_weights)
+                critic_loss *= tf.cast(importance_weights,
+                                       critic_loss.dtype)
+
+
         # Get trainable variables.
         policy_variables = self._policy_network.trainable_variables
+
         critic_variables = (
             # In this agent, the critic loss trains the observation network.
             self._observation_network.trainable_variables +
             self._critic_network.trainable_variables)
 
+        gen_variables = self._generator_network.trainable_variables
+
+        disc_variables = self._disc_network.trainable_variables
+        encoder_variables = (self._encoder_loc_network +
+                             self._encoder_scale_network)
+
         # Compute gradients.
         policy_gradients = tape.gradient(policy_loss, policy_variables)
         critic_gradients = tape.gradient(critic_loss, critic_variables)
+        disc_gradients = tape.gradient(disc_loss, disc_variables)
+        gen_gradients = tape.gradient(gen_loss, gen_variables)
+        encoder_gradients = tape.gradient(encoder_loss, encoder_variables)
 
         # Delete the tape manually because of the persistent=True flag.
         del tape
@@ -302,14 +408,24 @@ class D4PGLearner(acme.Learner):
         if self._clipping:
             policy_gradients = tf.clip_by_global_norm(policy_gradients, 40.)[0]
             critic_gradients = tf.clip_by_global_norm(critic_gradients, 40.)[0]
+            disc_gradients = tf.clip_by_global_norm(disc_gradients, 40.)[0]
+            gen_gradients = tf.clip_by_global_norm(gen_gradients, 40.)[0]
+            encoder_gradients = tf.clip_by_global_norm(encoder_gradients, 40.)[0]
 
         # Apply gradients.
-        self._policy_optimizer.apply(policy_gradients, policy_variables)
         self._critic_optimizer.apply(critic_gradients, critic_variables)
+        self._disc_optimizer.apply(disc_gradients, disc_variables)
+        self._encoder_optimizer.apply(encoder_gradients, encoder_variables)
+        self._gen_optimizer.apply(gen_gradients, gen_variables)
+        self._policy_optimizer.apply(policy_gradients, policy_variables)
+
 
         # Losses to track.
         return {
             'critic_loss': critic_loss,
+            'discriminator_loss': disc_loss,
+            'generator_loss': gen_loss,
+            'encoder_loss': encoder_loss,
             'policy_loss': policy_loss,
             'keys': keys,
             'priorities': priorities if self.per else None,
