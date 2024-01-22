@@ -38,7 +38,7 @@ import tensorflow_probability as tfp
 tfd = tfp.distributions
 
 
-class D4PGLearner(acme.Learner):
+class GANLearner(acme.Learner):
     """D4PG learner.
     This is the learning component of a D4PG agent. IE it takes a dataset as input
     and implements update functionality to learn from this dataset.
@@ -67,10 +67,14 @@ class D4PGLearner(acme.Learner):
         critic_loss_type='c51',
         threshold=0.95,
         decay_factor=.6,
+        z_dim =2,
         observation_network: types.TensorTransformation = lambda x: x,
         target_observation_network: types.TensorTransformation = lambda x: x,
         policy_optimizer: Optional[snt.Optimizer] = None,
         critic_optimizer: Optional[snt.Optimizer] = None,
+        gen_optimizer: Optional[snt.Optimizer] = None,
+        encoder_optimizer: Optional[snt.Optimizer] = None,
+        disc_optimizer: Optional[snt.Optimizer] = None,
         clipping: bool = True,
         per: bool = False,
         importance_sampling_exponent: float = 0.2,
@@ -119,6 +123,10 @@ class D4PGLearner(acme.Learner):
             self._critic_loss_func = quantile_regression
         self._critic_type = critic_loss_type
 
+        ## GAN params
+        self.z_dim=z_dim
+        self.decay_factor=decay_factor
+
         # Store online and target networks.
         self._policy_network = policy_network
         self._critic_network = critic_network
@@ -146,7 +154,6 @@ class D4PGLearner(acme.Learner):
         # Other learner parameters.
         self._discount = discount
         self._clipping = clipping
-        self.decay_factor=decay_factor
 
         # Necessary to track when to update target networks.
         self._num_steps = tf.Variable(0, dtype=tf.int32)
@@ -215,7 +222,7 @@ class D4PGLearner(acme.Learner):
             self._snapshotter = tf2_savers.Snapshotter(
                 objects_to_save={
                     'policy': self._policy_network,
-                    'critic': gen_mean,
+                    'generator': gen_mean,
                 })
 
         # Do not record timestamps until after the first learning step is done.
@@ -276,53 +283,55 @@ class D4PGLearner(acme.Learner):
             o_t = tree.map_structure(tf.stop_gradient, o_t)
 
             batch_size = tf.shape(o_t)[0]
-            # Corrected way to generate z_target
+            # Generate z_target
             z = tf.random.normal(shape=(batch_size, self.z_dim))  ##z
 
-            g_t = self._generator_network(z, o_tm1, transitions.action)  #### g(s)
+            g_tm1 = self._generator_network(z, o_tm1, transitions.action).values  #### g(s)
 
-            x_t= transitions.reward \
-                                      + discount * transitions.discount* self._target_generator_network(z,o_t, self._target_policy_network(o_t) ) ## x= [batch_size, n_quantiles]
+            g_t= self._target_generator_network(z, o_t, self._target_policy_network(o_t)).values
+
+            x_t= tf.reshape(transitions.reward, (-1,1))  \
+                 + tf.reshape(discount * transitions.discount, (-1,1)) * g_t ## x= [batch_size, n_quantiles]  ##Bellman target
 
             ## target prior_encoder for r_int
-            target_prior_encoder_loc = self._target_encoder_loc_network(o_tm1, transitions.action, g_t)
-            target_prior_encoder_scale = self._target_encoder_scale_network(o_tm1, transitions.action, g_t)
-            target_prior_encoder_dis = tfd.MultivariateNormalDiag(loc=target_prior_encoder_loc, scale_diag=target_prior_encoder_scale)
+            target_prior_encoder_loc = self._target_encoder_loc_network(g_tm1, o_tm1, transitions.action)
+            target_prior_encoder_scale = self._target_encoder_scale_network(g_tm1, o_tm1, transitions.action)
+            target_prior_encoder_dis = tfd.MultivariateNormalDiag(loc=target_prior_encoder_loc,
+                                                                  scale_diag=target_prior_encoder_scale)
 
             ## target posterior_encoder  for r_int
-            target_posterior_encoder_loc= self._target_encoder_loc_network (o_tm1, transitions.action, x_t)  ## x= [batch_size, self.z_dim]
-            target_posterior_encoder_scale=self._target_encoder_scale_network (o_tm1, transitions.action, x_t)
-            target_posterior_encoder_dis = tfd.MultivariateNormalDiag(loc=target_posterior_encoder_loc, scale_diag=target_posterior_encoder_scale)
+            target_posterior_encoder_loc= self._target_encoder_loc_network (x_t, o_tm1, transitions.action)  ## x= [batch_size, self.z_dim]
+            target_posterior_encoder_scale=self._target_encoder_scale_network (x_t, o_tm1, transitions.action)
+            target_posterior_encoder_dis = tfd.MultivariateNormalDiag(loc=target_posterior_encoder_loc,
+                                                                      scale_diag=target_posterior_encoder_scale)
 
             ## intrinsic reward
             r_intr= tfd.kl_divergence(target_posterior_encoder_dis, target_prior_encoder_dis)
-            r_combined= transitions.reward+ self.decay_factor * r_intr
+            r_combined= tf.reshape(transitions.reward, (-1,1)) + self.decay_factor * tf.reshape(r_intr, (-1,1))
 
-            critic_samples = r_combined\
-                                       + discount * transitions.discount * self._target_critic_network(o_t,
-                                                                                                          self._target_policy_network(
-                                                                                                              o_t))
-            critic_loss= tf.reduce_mean(
-                huber(critic_samples - self._critic_network(o_tm1, transitions.action), 1), (0, -1))
+            # Critic learning.
+            q_tm1 = self._critic_network(o_tm1, transitions.action)
+            q_t = self._target_critic_network(
+                o_t, self._target_policy_network(o_t))
+
+            # Critic loss.
+            critic_loss = self._critic_loss_func(q_tm1, r_combined,
+                                                 discount * transitions.discount, q_t)
 
             ##  encoder sampling
-            encoder_loc = self._encoder_loc_network(o_tm1, transitions.action,
-                                                                            x_t)  ## [batch_size, self.z_dim]
-            encoder_scale = self._encoder_scale_network(o_tm1, transitions.action,
-                                                                                x_t)
-            encoder_dis = tfd.MultivariateNormalDiag(loc=encoder_loc,
-                                                                      scale_diag=encoder_scale)
+            encoder_loc = self._encoder_loc_network(x_t, o_tm1, transitions.action)  ## [batch_size, self.z_dim]
+            encoder_scale = self._encoder_scale_network (x_t, o_tm1, transitions.action)
+            encoder_dis = tfd.MultivariateNormalDiag(loc=encoder_loc, scale_diag=encoder_scale)
 
             encoder_samples = encoder_dis.sample()  ## z_tilde should be [batch_size, self.z_dim]
             encoder_samples = tf.squeeze(encoder_samples, axis=0)
 
             z = tf.random.normal(shape=(batch_size, self.z_dim))  ##z
-            generator_samples = self._generator_network(z, o_tm1, transitions.action)  #### x_tilde
+            generator_samples = self._generator_network(z, o_tm1, transitions.action).values  #### x_tilde
 
             # discriminator loss
             disc_output_1= self._disc_network(generator_samples, z, o_tm1, transitions.action )
             disc_output_2 = self._disc_network(x_t, encoder_samples, o_tm1, transitions.action)
-
             disc_loss= -tf.reduce_mean(tf.log(disc_output_1)+ tf.log(1-disc_output_2 ), (0, -1))
 
             ### encoder loss
@@ -383,12 +392,13 @@ class D4PGLearner(acme.Learner):
         # Get trainable variables.
         policy_variables = self._policy_network.trainable_variables
 
-        critic_variables = (
+        gen_variables = (
             # In this agent, the critic loss trains the observation network.
             self._observation_network.trainable_variables +
-            self._critic_network.trainable_variables)
+            self._generator_network.trainable_variables
+            )
 
-        gen_variables = self._generator_network.trainable_variables
+        critic_variables = self._critic_network.trainable_variables
 
         disc_variables = self._disc_network.trainable_variables
         encoder_variables = (self._encoder_loc_network +

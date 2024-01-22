@@ -301,6 +301,10 @@ class EmpiricalDistribution(tfd.Empirical):
         sample_count = tf.cast(tf.shape(self.samples)[-1], self.samples.dtype)
         return tf.fill(tf.shape(self.samples), 1.0 / sample_count)
 
+    def values(self):
+        """Returns the values of the samples in the empirical distribution."""
+        return self.samples
+
 
 class EncoderHead(snt.Module):
     """Module that outputs mean and variance of Encoder distribution."""
@@ -346,11 +350,6 @@ class EncoderHead(snt.Module):
         @property
         def scale_network(self):
             return self._scale_layer
-
-        def __call__(self, inputs: tf.Tensor) -> tfd.Distribution:
-            loc = self._loc_layer(inputs)
-            scale = self._scale_layer(inputs)
-            return tfd.MultivariateNormalDiag(loc=loc, scale_diag=scale)   #.sample(N) return N samples
 
 
 class DynamicMultiplexer(snt.Module):
