@@ -2,6 +2,8 @@ from absl import flags
 from typing import Optional, Sequence, Union
 import enum
 from acme.tf import networks
+from acme import types
+from acme.tf import utils as tf2_utils
 
 from acme.tf.networks import distributions as ad
 from acme.tf.networks import DiscreteValuedHead, CriticMultiplexer, LayerNormMLP
@@ -262,10 +264,10 @@ class QuantileDiscreteValuedHead(snt.Module):
         return QuantileDistribution(values=quantile_values, quantiles=quantiles,
                                     probs=probs)
 
-
-
-################
+################ GAN Networks
 class GeneratorHead(snt.Module):
+    """Module that outputs samples of Generator."""
+
     def __init__(self, n_samples, w_init=snt.initializers.VarianceScaling(1e-4), b_init=snt.initializers.Zeros()):
         super().__init__(name='GeneratorHead')
         self.n_samples = n_samples
@@ -282,6 +284,8 @@ class GeneratorHead(snt.Module):
 
 
 class EmpiricalDistribution(tfd.Empirical):
+    """Module that outputs cvar of Empirical distribution."""
+
     def __init__(self, samples, event_ndims=0, validate_args=False, allow_nan_stats=True, name='Empirical'):
         super().__init__(samples=samples, event_ndims=event_ndims, validate_args=validate_args, allow_nan_stats=allow_nan_stats, name=name)
 
@@ -299,9 +303,9 @@ class EmpiricalDistribution(tfd.Empirical):
 
 
 class EncoderHead(snt.Module):
-    """Module that outputs parameters for a Generalized Pareto Distribution."""
+    """Module that outputs mean and variance of Encoder distribution."""
 
-    def __init__(self,  latent_dim: int, shape_layer_sizes: Sequence[int] = (512, 512, 256), scale_layer_sizes: Sequence[int] = (512, 512, 256),
+    def __init__(self,  latent_dim: int, loc_layer_sizes: Sequence[int] = (512, 512, 256), scale_layer_sizes: Sequence[int] = (512, 512, 256),
                  init_scale=0.3, min_scale=1e-6,
                  w_init=snt.initializers.VarianceScaling(1e-4),
                  b_init=snt.initializers.Zeros()):
@@ -314,11 +318,10 @@ class EncoderHead(snt.Module):
 
         # Define location network
         self._loc_layer = snt.Sequential([
-            networks.CriticMultiplexer(),
-            networks.LayerNormMLP(shape_layer_sizes, activate_final=True),
+            DynamicMultiplexer(),
+            networks.LayerNormMLP(loc_layer_sizes, activate_final=True),
             snt.Linear(latent_dim, w_init=w_init, b_init=b_init)
         ])
-
 
         # Define scale network
         def scale_transformation(inputs):
@@ -330,7 +333,7 @@ class EncoderHead(snt.Module):
             return scale
 
         self._scale_layer = snt.Sequential([
-            networks.CriticMultiplexer(),
+            DynamicMultiplexer(),
             networks.LayerNormMLP(scale_layer_sizes, activate_final=True),
             snt.Linear(latent_dim, w_init=w_init, b_init=b_init),
             scale_transformation  # Add this layer for the scale transformation
@@ -350,56 +353,25 @@ class EncoderHead(snt.Module):
             return tfd.MultivariateNormalDiag(loc=loc, scale_diag=scale)   #.sample(N) return N samples
 
 
-class PriorHead(snt.Module):
-    """Module that outputs parameters for a Generalized Pareto Distribution."""
+class DynamicMultiplexer(snt.Module):
+    """Multiplexer module for dynamically concatenating multiple inputs.
 
-    def __init__(self,  latent_dim: int, shape_layer_sizes: Sequence[int] = (512, 256), scale_layer_sizes: Sequence[int] = (512, 256),
-                 init_scale=0.3, min_scale=1e-6,
-                 w_init=snt.initializers.VarianceScaling(1e-4),
-                 b_init=snt.initializers.Zeros()):
+    This module can take any number of inputs and concatenates them along the batch dimension.
+    """
 
-        super().__init__(name='PriorMultivariateNormalDiagHead')
+    def __init__(self):
+        super().__init__(name='dynamic_multiplexer')
 
-        self._init_scale = init_scale
-        self._min_scale = min_scale
-        self.latent_dim=latent_dim
+    def __call__(self, *inputs: types.NestedTensor) -> tf.Tensor:
+        # Ensure all inputs are of the same type for concat to work
+        dtype = inputs[0].dtype
+        casted_inputs = [tf.cast(input_tensor, dtype) if input_tensor.dtype != dtype else input_tensor for input_tensor in inputs]
 
-        # Define shape network
-        self._loc_layer = snt.Sequential([
-            networks.CriticMultiplexer(),
-            networks.LayerNormMLP(shape_layer_sizes, activate_final=True),
-            snt.Linear(latent_dim, w_init=w_init, b_init=b_init)
-        ])
+        # Concatenate all inputs, with one batch dimension.
+        concatenated_outputs = tf2_utils.batch_concat(casted_inputs)
+        return concatenated_outputs
 
-        # Define scale network
-        def scale_transformation(inputs):
-            # Apply softplus and ensure the scale is non-zero
-            scale = tf.nn.softplus(inputs)
-            zero = tf.zeros_like(scale)
-            scale *= self._init_scale / tf.nn.softplus(zero)
-            scale += self._min_scale
-            return scale
-
-        self._scale_layer = snt.Sequential([
-            networks.CriticMultiplexer(),
-            networks.LayerNormMLP(scale_layer_sizes, activate_final=True),
-            snt.Linear(latent_dim, w_init=w_init, b_init=b_init),
-            scale_transformation  # Add this layer for the scale transformation
-        ])
-
-        @property
-        def loc_network(self):
-            return self._loc_layer
-
-        @property
-        def scale_network(self):
-            return self._scale_layer
-
-        def __call__(self, inputs: tf.Tensor) -> tfd.Distribution:
-            loc = self._loc_layer(inputs)
-            scale = self._scale_layer(inputs)
-            return tfd.MultivariateNormalDiag(loc=loc, scale_diag=scale)   #.sample(N) return N samples
-
+####
 
 class IQNHead(snt.Module):
     def __init__(self, th, n_cos=64, n_tau=8, n_k=32, layer_size: int = 256,
