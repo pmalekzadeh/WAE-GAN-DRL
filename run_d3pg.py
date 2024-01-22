@@ -178,9 +178,13 @@ def make_GAN_networks(
     action_spec: specs.BoundedArray,
     policy_layer_sizes: Sequence[int] = (256, 256, 256),
     critic_layer_sizes: Sequence[int] = (512, 512, 256),
-    n_smaples: int =100,
+    generator_layer_sizes: Sequence[int] = (512, 512, 256),
+    discriminator_layer_sizes: Sequence[int] = (512, 512, 256),
+    encoder_loc_layer_sizes: Sequence[int] = (512, 512, 256),
+    encoder_scale_layer_sizes: Sequence[int] = (512, 512, 256),
+    generator_n_smaples: int =100,
     latent_dim: int = 2,
-    quantile_interval: float = 0.01
+    quantile_interval: float = 0.01  # for critic
 ) -> Mapping[str, types.TensorTransformation]:
     """Creates the networks used by the agent."""
 
@@ -208,31 +212,27 @@ def make_GAN_networks(
 
     generator_network = snt.Sequential([
         # The multiplexer concatenates the observations/actions/latent.
-        networks.CriticMultiplexer(),
-        networks.LayerNormMLP(critic_layer_sizes, activate_final=True),
-        ad.GeneratorHead(len(quantiles))
-
+        ad.DynamicMultiplexer(),
+        networks.LayerNormMLP(generator_layer_sizes, activate_final=True),
+        ad.GeneratorHead(n_samples= generator_n_smaples)
     ])
 
-    discriminator_network= generator_network = snt.Sequential([
+    discriminator_network= snt.Sequential([
         # The multiplexer concatenates the observations/actions/latent.
-        networks.CriticMultiplexer(),
-        networks.LayerNormMLP(critic_layer_sizes, activate_final=True),
+        ad.DynamicMultiplexer(),
+        networks.LayerNormMLP(discriminator_layer_sizes, activate_final=True),
         snt.Linear(1),
         tf.nn.sigmoid   ## making the output to be between 0 and 1
     ])
 
-    encoder_network=ad.EncoderHead(latent_dim=latent_dim)
-    # prior_network=ad.PriorHead(latent_dim=latent_dim)
-
+    encoder_network=ad.EncoderHead(latent_dim=latent_dim, loc_layer_sizes= encoder_loc_layer_sizes, scale_layer_sizes=encoder_scale_layer_sizes)
 
     return {
         'policy': policy_network,
+        'critic': critic_network,
         'generator': generator_network,
         'encoder_loc': encoder_network.loc_network,
         'encoder_scale': encoder_network.scale_network,
-        'prior_loc': prior_network.loc_network,
-        'prior_scale': prior_network.scale_network,
         'discriminator': discriminator_network,
         'observation': observation_network,
     }
@@ -304,7 +304,6 @@ def main(argv):
     elif args.critic == 'qr':
         agent_networks = make_quantile_networks(
             action_spec=environment_spec.actions)
-
     elif args.critic == 'GAN':
         agent_networks = make_GAN_networks(
             action_spec=environment_spec.actions)

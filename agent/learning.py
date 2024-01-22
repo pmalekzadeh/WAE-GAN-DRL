@@ -185,7 +185,7 @@ class D4PGLearner(acme.Learner):
         if checkpoint:
             self._checkpointer = tf2_savers.Checkpointer(
                 directory=checkpoint_folder,
-                subdirectory='d4pg_GAN_learner',
+                subdirectory='gan_learner',
                 add_uid=False,
                 objects_to_save={
                     'counter': self._counter,
@@ -207,7 +207,7 @@ class D4PGLearner(acme.Learner):
                     'critic_optimizer': self._critic_optimizer,
                     'generator_optimizer':self._gen_optimizer,
                     'discriminator_optimizer': self._disc_optimizer,
-                    'encoder_optimizer': self._encoder_optimizer
+                    'encoder_optimizer': self._encoder_optimizer,
                     'num_steps': self._num_steps,
                 })
             gen_mean = snt.Sequential(
