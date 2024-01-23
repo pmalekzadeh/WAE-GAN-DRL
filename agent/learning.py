@@ -66,7 +66,8 @@ class GANLearner(acme.Learner):
         obj_func='var',
         critic_loss_type='c51',
         threshold=0.95,
-        decay_factor=.6,
+        decay_factor=0.01,
+        r_intr_obj= True,
         z_dim =2,
         observation_network: types.TensorTransformation = lambda x: x,
         target_observation_network: types.TensorTransformation = lambda x: x,
@@ -285,13 +286,11 @@ class GANLearner(acme.Learner):
             batch_size = tf.shape(o_t)[0]
             # Generate z_target
             z = tf.random.normal(shape=(batch_size, self.z_dim))  ##z
-
-            g_tm1 = self._generator_network(z, o_tm1, transitions.action).values  #### g(s)
-
             g_t= self._target_generator_network(z, o_t, self._target_policy_network(o_t)).values
-
             x_t= tf.reshape(transitions.reward, (-1,1))  \
                  + tf.reshape(discount * transitions.discount, (-1,1)) * g_t ## x= [batch_size, n_quantiles]  ##Bellman target
+
+            g_tm1 = self._generator_network(z, o_tm1, transitions.action).values  #### g(s)
 
             ## target prior_encoder for r_int
             target_prior_encoder_loc = self._target_encoder_loc_network(g_tm1, o_tm1, transitions.action)
@@ -307,7 +306,8 @@ class GANLearner(acme.Learner):
 
             ## intrinsic reward
             r_intr= tfd.kl_divergence(target_posterior_encoder_dis, target_prior_encoder_dis)
-            r_combined= tf.reshape(transitions.reward, (-1,1)) + self.decay_factor * tf.reshape(r_intr, (-1,1))
+            decay_rate = self.decay_factor * tf.sqrt(tf.log(self._num_steps) / self._num_steps)  ## exploration coefficient
+            r_combined= tf.reshape(transitions.reward, (-1,1)) +  decay_rate * tf.reshape(r_intr, (-1,1))
 
             # Critic learning.
             q_tm1 = self._critic_network(o_tm1, transitions.action)
@@ -322,7 +322,6 @@ class GANLearner(acme.Learner):
             encoder_loc = self._encoder_loc_network(x_t, o_tm1, transitions.action)  ## [batch_size, self.z_dim]
             encoder_scale = self._encoder_scale_network (x_t, o_tm1, transitions.action)
             encoder_dis = tfd.MultivariateNormalDiag(loc=encoder_loc, scale_diag=encoder_scale)
-
             encoder_samples = encoder_dis.sample()  ## z_tilde should be [batch_size, self.z_dim]
             encoder_samples = tf.squeeze(encoder_samples, axis=0)
 

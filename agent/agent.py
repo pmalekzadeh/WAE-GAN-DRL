@@ -482,7 +482,7 @@ class GANConfig:
     generator_optimizer: Optional[snt.Optimizer] = None
     discriminator_optimizer: Optional[snt.Optimizer] = None
     encoder_optimizer: Optional[snt.Optimizer] = None
-    decay_factor =0.6
+    decay_factor =0.01
     z_dim =2
     n_gen_samples= 100
     min_replay_size: int = 1000
@@ -728,7 +728,7 @@ class GAN(agent.Agent):
         encoder_loc_network: snt.Module,
         encoder_scale_network: snt.Module,
         discriminator_network: snt.Module,
-        decay_factor=0.6,
+        decay_factor=0.01,
         z_dim=2,
         n_gen_samples=100,
         obj_func='var',
