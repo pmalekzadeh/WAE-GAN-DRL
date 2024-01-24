@@ -286,24 +286,71 @@ class GeneratorHead(snt.Module):
 class EmpiricalDistribution(tfd.Empirical):
     """Module that outputs cvar of Empirical distribution."""
 
-    def __init__(self, samples, event_ndims=0, validate_args=False, allow_nan_stats=True, name='Empirical'):
-        super().__init__(samples=samples, event_ndims=event_ndims, validate_args=validate_args, allow_nan_stats=allow_nan_stats, name=name)
+    def __init__(self, values, validate_args=False, allow_nan_stats=True, name='EmpiricalDistribution'):
+        self._values = tf.convert_to_tensor(values)
+        self._num_values = tf.shape(self._values)[-1]
+        self._probs = tf.fill(self._num_values, 1.0 / tf.cast(self._num_values, dtype=tf.float32))
+        self._sorted_values = tf.sort(self._values)
 
-    def cvar(self, th) -> tf.Tensor:
+        parameters = dict(locals())
+        super().__init__(
+            dtype=self._values.dtype,
+            reparameterization_type=tfd.NOT_REPARAMETERIZED,
+            validate_args=validate_args,
+            allow_nan_stats=allow_nan_stats,
+            parameters=parameters,
+            name=name)
+
+    @classmethod
+    def _parameter_properties(cls, dtype, num_classes=None):
+        return dict(
+            values=tfp.util.ParameterProperties(event_ndims=1))
+
+    def _event_shape(self):
+        return tf.TensorShape([])
+
+    def _event_shape_tensor(self):
+        return tf.shape([])
+
+    def _mean(self):
+        return tf.reduce_mean(self._values, axis=-1)
+
+    def _sample_n(self, n, seed=None):
+        indices = tf.random.uniform(shape=[n], maxval=self._num_values, dtype=tf.int32, seed=seed)
+        return tf.gather(self._values, indices, axis=-1)
+
+    def _variance(self):
+        mean = self._mean()
+        squared_diff = tf.square(self._values - mean[..., tf.newaxis])
+        return tf.reduce_mean(squared_diff, axis=-1)
+
+    def _stddev(self):
+        return tf.sqrt(self._variance())
+
+    def meanstd(self):
+        """Implements mean - volc * stddev."""
+        volc = FLAGS.std_coef
+        return self._mean() - volc * self._stddev()
+
+    def var(self, th):
         quantile = 1 - th
-        sorted_samples = tf.sort(self.samples, axis=-1)
-        cdf = tf.cumsum(self.probs_parameter(), axis=-1)
-        exceed_quantile = cdf >= quantile
-        eligible_samples = tf.boolean_mask(sorted_samples, exceed_quantile)
-        return tf.reduce_mean(eligible_samples)
+        index = tf.cast(quantile * tf.cast(tf.size(self._values), tf.float32), tf.int32)
+        return tf.gather(self._sorted_values, index)
 
-    def probs_parameter(self):
-        sample_count = tf.cast(tf.shape(self.samples)[-1], self.samples.dtype)
-        return tf.fill(tf.shape(self.samples), 1.0 / sample_count)
+    def cvar(self, th):
+        quantile = 1 - th
+        threshold_value = self.var(th)
+        eligible_values = tf.boolean_mask(self._values, self._values <= threshold_value)
+        return tf.reduce_mean(eligible_values)
 
     def values(self):
-        """Returns the values of the samples in the empirical distribution."""
-        return self.samples
+        return self._values
+
+    def gain_loss_tradeoff(self, k1, k2, alpha):
+        zero = tf.constant(0, dtype=tf.float32)
+        gains = tf.pow(tf.maximum(zero, self._values), alpha)
+        losses = tf.pow(tf.maximum(zero, -self._values), alpha)
+        return tf.reduce_mean(k1 * gains - k2 * losses, axis=-1)
 
 
 class EncoderHead(snt.Module):

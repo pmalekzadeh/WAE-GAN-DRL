@@ -26,6 +26,8 @@ from domain.asset.portfolio import Portfolio
 from env.trade_env import DREnv
 from config.config_loader import ConfigLoader
 from agent.agent import D4PG
+from agent.agent import GAN
+
 # Note that the GammaVegaTradingEnv for Exotic Options are never implemented, right now we are only studying the delta hedging behaviours.
 import agent.distributional as ad
 from analysis.gen_stats import generate_stat
