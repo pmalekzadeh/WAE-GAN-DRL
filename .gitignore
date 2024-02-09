@@ -6,3 +6,4 @@ policies/
 *.csv
 *.html
 *.xlsx
+.ipynb_checkpoints/

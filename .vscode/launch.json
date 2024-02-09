@@ -66,10 +66,18 @@
             "program": "${workspaceFolder}/run_d3pg.py",
             "args": [
                 "@run_configs/agents/d3pg.cfg",
-                "--env_config=run_configs/envs/dr_bsm_vanilla.yaml",
-                "--logger_prefix=logs/dr_bsm_vanilla/d3pg/poisson1",
+                "--env_config=run_configs/envs/bsm_vanilla_eval.yaml",
+                "--logger_prefix=policies/bsm_vanilla/test",
+                "--eval_only",
+                "--agent_path=policies/bsm_vanilla/dr_vol",
                 "--bsm_portfolio.client_trade_poisson_rate=1.0",
-                "--sabr_portfolio.client_trade_poisson_rate=1.0"
+                "--bsm_sde.vol=0.1",
+                "--eval_env.vega_ratio=False"
+                // "--lr=0.001",
+                // "--sigma=0.5",
+                // "--per",
+                // "--continue_train",
+                // "--agent_path=policies/bsm_vanilla/dr_vol"
             ],
             "env": {
                 "PYTHONPATH": "${workspaceFolder}"
@@ -83,10 +91,9 @@
             "request": "launch",
             "program": "${workspaceFolder}/run_benchmark.py",
             "args": [
-                "@run_configs/agents/delta.cfg",
+                "@run_configs/agents/gamma.cfg",
                 "--env_config=run_configs/envs/bsm_vanilla.yaml",
-                "--logger_prefix=logs/bsm_vanilla/delta_vol0.2_poisson1",
-                "--bsm_sde.vol=0.2",
+                "--logger_prefix=logs/bsm_vanilla/gamma_sabr",
                 "--bsm_portfolio.client_trade_poisson_rate=0.0",
                 "--sabr_portfolio.client_trade_poisson_rate=0.0"
             ],
