@@ -193,7 +193,6 @@ def make_gan_networks(
     quantile_interval: float = 0.01  # for critic
 ) -> Mapping[str, types.TensorTransformation]:
     """Creates the networks used by the agent."""
-
     # Get total number of action dimensions from action spec.
     num_dimensions = np.prod(action_spec.shape, dtype=int)
 
@@ -365,7 +364,7 @@ def main(argv):
             observation_network=agent_networks['observation'],
             n_step=args.n_step,
             discount=1.0,
-            sigma=args.sigma,  # pytype: disable=wrong-arg-types
+            sigma=args.sigma,  # pytype: disable=wrong-ar
             checkpoint=False,
             logger=loggers['learner'],
             batch_size=args.batch_size,
@@ -378,7 +377,6 @@ def main(argv):
                 else DemonstrationRecorder().load(args.demo_path).make_tf_dataset(),
             demonstration_step=args.demo_step,
         )
-
     # Create the evaluation policy.
     if args.eval_only or args.continue_train:
         policy_net = agent._learner._policy_network
